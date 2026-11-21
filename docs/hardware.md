@@ -1,37 +1,76 @@
 # Hardware
 
-> Pin numbers below are **unverified**. They come from memory of this board
-> family, not from the vendor schematic. Confirm against the schematic for
-> your exact board before soldering.
+Board: Freenove ESP32 Display 4.0" 320x480 resistive touch (ESP32-WROOM-32E N4:
+dual core, 520 KB SRAM, 4 MB flash, no PSRAM; Wi-Fi + Bluetooth 4.2 LE).
+Freenove repo: https://github.com/Freenove/Freenove_ESP32_Display (sketches,
+TFT_eSPI setups, schematic PDF).
 
-## Parts
+Confidence: **sketch** = a pin defined in Freenove's own example code (high).
+**schematic** = read from text extracted from Freenove's schematic PDF (medium;
+the PDF extraction is messy). Verify anything marked schematic with a meter or
+the PDF before soldering.
 
-- ESP32-32E 4.0" 320x480 resistive-touch display board (ESP32-WROOM-32E N4:
-  4 MB flash, likely no PSRAM)
-- 18500 Li-ion, 1500 mAh (check it has a protection circuit)
-- USB-C charge + 5 V boost module (the board shows no battery connector; check
-  the edge near its USB-C port before assuming it can charge)
-- INMP441 I2S microphone
-- Small vibration motor + N-MOSFET + flyback diode
-- IMU (QMI8658 is the Hermes Gadget SDK's reference chip)
-- Rotary encoder with push switch (EC11)
-- Two recessed side buttons
+## Onboard pins
 
-## Pin budget
+| Function | GPIO | Source |
+| --- | --- | --- |
+| LCD (ST7796, HSPI) | MISO 12, MOSI 13, SCLK 14, CS 15, DC 2, backlight 27, RST not used (board reset) | sketch (`FNK0114S_4.0_320x480_ST7796.h`) |
+| Touch (XPT2046) | shares the LCD SPI bus; CS 33; IRQ 36 | sketch (CS), schematic (IRQ) |
+| TF card (VSPI) | SCK 18, MISO 19, MOSI 23, CS 5 | sketch |
+| RGB LED | R 22, G 16, B 17, active low | sketch |
+| Speaker amp | amp enable IO4 (sketch drives it LOW to play); audio in from DAC IO26 | sketch (IO4), schematic (IO26) |
+| Battery voltage | IO34, ADC; battery mV = reading x 2 | sketch |
+| BOOT key | IO0 (usable as a button) | sketch |
+| USB serial / UART0 | TX IO1, RX IO3 | schematic |
 
-The display, touch, TF slot, RGB LED, speaker DAC and battery ADC use most
-GPIOs. Plan:
+## Connectors
 
-1. Give up the TF slot and RGB LED to free their pins.
-2. Mic on I2S1 (the DAC speaker is on I2S0).
-3. IMU, expander on one I2C bus.
-4. Encoder, buttons and motor on an I2C GPIO expander (e.g. MCP23017) with one
-   interrupt line.
-5. Analog reads only on ADC1 (ADC2 stops working with Wi-Fi on).
-6. The "I2C" header pins may be shared with touch on this board; verify before
-   using them.
+| Connector | Pins | Notes |
+| --- | --- | --- |
+| Input pin port | IO35, IO39 | input only, no internal pull-up |
+| SPEAKER | SP+, SP- | onboard amp (SC8002B) |
+| SPI port | IO23 (MOSI), IO19 (MISO), IO18 (SCK), IO21 (CS) | same lines as the TF slot, except IO21 |
+| I2C port | 3.3V, IO32 (SDA), IO25 (SCL), GND | **free**: touch is on the LCD bus, not these |
+| UART port | 5V, TXD, RXD, GND | UART0, same as USB serial |
+| BAT port | BAT+, GND | see Battery |
+| TF card slot | via the SPI pins above | |
 
-## Power
+Correction to earlier notes: touch is **not** on IO32/IO25, so the I2C port is free.
 
-USB-C -> charge/boost module -> 5 V into the board, with a slide switch.
-Battery voltage via divider to an ADC1 pin for the battery %.
+## Battery
+
+The schematic shows a **TP4054** single-cell Li-ion charger on the USB-C VBUS
+line, feeding BAT+, with an ME6217C33 3.3 V regulator. So the board should
+charge a 4.2 V Li-ion/LiPo cell from its own USB-C, as you wanted, with no extra
+charger board. To check before connecting the 18500 cell:
+
+- **Polarity**: the BAT connector has a "+" marked; confirm with a multimeter
+  before plugging in. Wrong polarity can destroy the board.
+- Charge current is set by a resistor we have not read; TP4054 maxes at about
+  500 mA, fine for 1500 mAh.
+- The cell should have a protection circuit. The cell in the photo has a loose
+  red wire and no visible protection board, so verify.
+- No boost converter appears in the schematic text, so the 5 V rail (UART 5V pin)
+  likely exists only while USB is plugged in. Do not power the motor or other 5 V
+  parts from it if you want battery operation. Not yet tested.
+
+## Plan for the add-ons
+
+| Part | Pins | Why |
+| --- | --- | --- |
+| IMU (I2C) | SDA IO32, SCL IO25 | the free I2C port with 3.3V and GND |
+| INMP441 mic | BCLK IO21, WS IO22, DIN IO39 | I2S1; the speaker DAC uses I2S0. DIN is an input, so an input-only pin works. Gives up the red LED. |
+| Rotary encoder | A IO16, B IO17, click IO35 | gives up green/blue LED. IO35 needs an external 10k pull-up to 3.3V |
+| Side button A (push-to-talk) | IO36 | input only, needs a 10k pull-up. Touch IRQ is not needed because TFT_eSPI polls. |
+| Side button B (cancel) | IO0 (BOOT key) for dev, later IO5 | |
+| Vibration motor | IO23 via N-MOSFET + flyback diode | gives up the TF slot. Power from the battery side, not 5 V |
+| Slider as volume (optional) | IO39 | ADC1; conflicts with the mic DIN, so choose one |
+
+This plan gives up the TF card slot and the RGB LED. If you want to keep the SD,
+add an MCP23017 I2C expander on the I2C port and move the encoder, buttons and
+motor there.
+
+Rules: use only ADC1 pins (32-39) for analog reads, because ADC2 stops working
+with Wi-Fi on. Pins 34-39 are input only and have no pull-ups. Not yet verified
+on the board: audio amp enable polarity, charge current and battery-powered
+operation.
