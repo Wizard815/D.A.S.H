@@ -1,4 +1,4 @@
-# D.A.S.H
+# D.A.S.H: Direct Agent System Hub
 
 A pocket-sized ESP32 companion that talks to your whole homelab agent stack:
 hold a button, speak, and the answer, approvals and your day appear on a small
