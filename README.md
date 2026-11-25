@@ -9,7 +9,7 @@ touchscreen. Formerly called PocketAgent.
 | System | Role on the device | Transport |
 | --- | --- | --- |
 | **Hermes Agent** (Gadget plugin) | voice chat, display cards, device actions, command approvals | WebSocket `hermes-gadget.v1` on `:8765/gadget` |
-| **FAITH** | family/household view, Yes/No for held actions (locks, alarms), voice fallback | HTTPS: `/v1/chat/completions`, `/api/voice/*`, `/api/chat/confirm/:id` |
+| **FAITH** | family/household view, Yes/No for held actions (locks, alarms), voice fallback | HTTPS, paired like a wall screen: `/api/chat`, `/api/voice/*`, `/api/chat/confirm/:id` |
 | **Pondering Orb** | tasks, today, chores, projects glance; mark done | HTTPS REST + token from `ORB_API_TOKENS` |
 | **Hermes Studio** | live agent activity (runs, tools, approvals) | Socket.IO `/global-agent`, `mcu.events.subscribe` |
 
@@ -24,7 +24,9 @@ See [docs/hardware.md](docs/hardware.md).
 
 ## Status
 
-Planning. Nothing here is flashed or tested on hardware yet. See
+M1 bring-up firmware is written and builds (screen, touch, Wi-Fi, battery,
+buttons, a FAITH health link), with host unit tests in CI. Nothing is flashed or
+tested on hardware yet. See [firmware/README.md](firmware/README.md),
 [docs/roadmap.md](docs/roadmap.md) and [docs/open-questions.md](docs/open-questions.md).
 
 ## Docs
