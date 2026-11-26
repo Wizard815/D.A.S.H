@@ -7,3 +7,8 @@
 #warning "include/secrets.h not found: using secrets.example.h. Copy it and fill in your Wi-Fi."
 #include "secrets.example.h"
 #endif
+
+// Settings added after a secrets.h was made: off unless set.
+#ifndef DASH_FAITH_TOKEN
+#define DASH_FAITH_TOKEN ""
+#endif

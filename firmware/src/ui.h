@@ -4,11 +4,15 @@
 
 #include "connector.h"
 
+class ProjectsLink;
+
 namespace ui {
 
-enum class Screen : uint8_t { Home, Links, Device, Talk, kCount };
+// The first four are the tabs, in order.
+enum class Screen : uint8_t { Home, Projects, Links, Device, Talk, kCount };
 
-void begin(dash::Registry* links);
+// `projects` may be null (no FAITH token).
+void begin(dash::Registry* links, ProjectsLink* projects);
 // Runs the touch calibration screen and saves the result.
 void calibrateTouch();
 void loop(uint32_t nowMs);

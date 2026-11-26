@@ -5,6 +5,9 @@
 #include "battery.h"
 #include "button.h"
 #include "connector.h"
+#include "glance.h"
+#include <stdio.h>
+#include <string.h>
 
 using namespace dash;
 
@@ -143,6 +146,93 @@ void test_state_text_never_empty() {
     TEST_ASSERT_TRUE(linkStateText((LinkState)s)[0] != '\0');
 }
 
+// ---------- projects glance ----------
+// The shape FAITH's GET /api/projects/glance sends (server/src/projects/projects.ts).
+static const char* kGlance = R"({"projects":[
+ {"id":"person-sam","name":"Sam","needs_you":0,"working":1,"threads":[
+  {"id":"t1","title":"Gift for Robin","status":"working","last":""},
+  {"id":"t2","title":"Dinner ideas","status":"done","last":"Tonight is fish tacos — Robin’s pick…"}]},
+ {"id":"family","name":"Family","needs_you":1,"working":0,"threads":[
+  {"id":"t3","title":"Saturday 🎉","status":"waiting","last":"Waiting for approval"}]},
+ {"id":"parents","name":"Parents","needs_you":0,"working":0,"threads":[]}]})";
+
+static Glance g;  // big: keep it off the stack
+void test_glance_parses() {
+  TEST_ASSERT_TRUE(parseGlance(kGlance, strlen(kGlance), g));
+  TEST_ASSERT_EQUAL(3, g.nProjects);
+  TEST_ASSERT_EQUAL(3, g.nThreads);
+  TEST_ASSERT_EQUAL_STRING("Family", g.projects[1].name);
+  TEST_ASSERT_EQUAL(2, g.projects[1].first);
+  TEST_ASSERT_EQUAL(1, g.projects[1].count);
+  TEST_ASSERT_EQUAL(0, g.projects[2].count);
+  TEST_ASSERT_EQUAL(1, g.threads[2].project);
+  TEST_ASSERT_EQUAL(1, g.needsYou);
+  TEST_ASSERT_EQUAL(1, g.working);
+  // Folded to ASCII for the screen's fonts; the emoji is dropped.
+  TEST_ASSERT_EQUAL_STRING("Tonight is fish tacos - Robin's pick...", g.threads[1].last);
+  TEST_ASSERT_EQUAL_STRING("Saturday ", g.threads[2].title);
+}
+void test_glance_rejects_junk() {
+  const char* bad[] = {"", "nope", "{\"error\":\"Sign in again\"}", "[1,2]"};
+  for (const char* b : bad) {
+    g.nProjects = 9;
+    TEST_ASSERT_FALSE(parseGlance(b, strlen(b), g));
+    TEST_ASSERT_EQUAL(0, g.nProjects);
+  }
+}
+void test_glance_caps_and_clips() {
+  // 10 projects of 5 long threads: keeps 8 projects and 40 threads, clips text.
+  static char big[16000];
+  int o = snprintf(big, sizeof big, "{\"projects\":[");
+  for (int p = 0; p < 10; p++) {
+    o += snprintf(big + o, sizeof big - o, "%s{\"id\":\"p%d\",\"name\":\"P\",\"needs_you\":0,\"working\":5,\"threads\":[", p ? "," : "", p);
+    for (int t = 0; t < 5; t++)
+      o += snprintf(big + o, sizeof big - o, "%s{\"id\":\"t\",\"title\":\"%s\",\"status\":\"working\",\"last\":\"x\"}", t ? "," : "",
+                    "A very long thread title that goes on and on and on");
+    o += snprintf(big + o, sizeof big - o, "]}");
+  }
+  snprintf(big + o, sizeof big - o, "]}");
+  TEST_ASSERT_TRUE(parseGlance(big, strlen(big), g));
+  TEST_ASSERT_EQUAL(Glance::kProjects, g.nProjects);
+  TEST_ASSERT_EQUAL(Glance::kThreads, g.nThreads);
+  TEST_ASSERT_EQUAL(sizeof g.threads[0].title - 1, strlen(g.threads[0].title));
+}
+void test_glance_words() {
+  TEST_ASSERT_EQUAL_STRING("Waiting for approval", threadStatusText("waiting"));
+  TEST_ASSERT_EQUAL_STRING("Didn't work", threadStatusText("failed"));
+  TEST_ASSERT_EQUAL_STRING("Unknown", threadStatusText("odd"));
+  TEST_ASSERT_TRUE(threadNeedsYou("failed"));
+  TEST_ASSERT_FALSE(threadNeedsYou("done"));
+  char line[40];
+  TEST_ASSERT_TRUE(parseGlance(kGlance, strlen(kGlance), g));
+  glanceSummary(g, line, sizeof line);
+  TEST_ASSERT_EQUAL_STRING("1 needs you, 1 working", line);
+  g.needsYou = 0; g.working = 0;
+  glanceSummary(g, line, sizeof line);
+  TEST_ASSERT_EQUAL_STRING("Nothing going on", line);
+}
+void test_glance_rows() {
+  TEST_ASSERT_TRUE(parseGlance(kGlance, strlen(kGlance), g));
+  GlanceRow rows[16];
+  int n = glanceRows(g, rows, 16);
+  TEST_ASSERT_EQUAL(6, n);  // Sam, t1, t2, Family, t3, Parents
+  TEST_ASSERT_TRUE(rows[0].heading);
+  TEST_ASSERT_FALSE(rows[2].heading);
+  TEST_ASSERT_EQUAL(1, rows[2].index);
+  TEST_ASSERT_TRUE(rows[5].heading);
+  TEST_ASSERT_EQUAL(2, rows[5].index);
+  TEST_ASSERT_EQUAL(3, glanceRows(g, rows, 3));  // never past the buffer
+}
+void test_ascii_copy_bounds() {
+  char s[5];
+  asciiCopy(s, sizeof s, "\xE2\x80\xA6\xE2\x80\xA6");  // two ellipses, room for 4
+  TEST_ASSERT_EQUAL_STRING("....", s);
+  asciiCopy(s, sizeof s, "\xC3");  // a cut-off character
+  TEST_ASSERT_EQUAL_STRING("", s);
+  asciiCopy(s, sizeof s, nullptr);
+  TEST_ASSERT_EQUAL_STRING("", s);
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_battery_ends);
@@ -159,5 +249,11 @@ int main() {
   RUN_TEST(test_registry_revision_tracks_changes);
   RUN_TEST(test_registry_full);
   RUN_TEST(test_state_text_never_empty);
+  RUN_TEST(test_glance_parses);
+  RUN_TEST(test_glance_rejects_junk);
+  RUN_TEST(test_glance_caps_and_clips);
+  RUN_TEST(test_glance_words);
+  RUN_TEST(test_glance_rows);
+  RUN_TEST(test_ascii_copy_bounds);
   return UNITY_END();
 }

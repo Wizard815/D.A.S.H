@@ -1,5 +1,6 @@
 // D.A.S.H firmware, milestone M1: screen, touch, Wi-Fi, battery, buttons,
-// and the connector registry with a first link (FAITH health).
+// and the connector registry with a first link (FAITH health), plus FAITH's
+// family projects (read-only).
 #include <Arduino.h>
 
 #include "config.h"
@@ -7,12 +8,14 @@
 #include "faith_link.h"
 #include "hw.h"
 #include "net.h"
+#include "projects_link.h"
 #include "settings.h"
 #include "ui.h"
 
 namespace {
 dash::Registry links;
 FaithLink faith(DASH_FAITH_URL);
+ProjectsLink projects(DASH_FAITH_URL, DASH_FAITH_TOKEN);
 
 constexpr uint32_t kDimAfterMs = 60000;
 constexpr uint8_t kBright = 255, kDim = 24;
@@ -37,8 +40,10 @@ void setup() {
 
   faith.enabled = settings::linkEnabled(faith.name(), true);
   links.add(&faith);
+  projects.enabled = settings::linkEnabled(projects.name(), true);
+  links.add(&projects);
 
-  ui::begin(&links);  // may run touch calibration first
+  ui::begin(&links, &projects);  // may run touch calibration first
   net::begin();
   links.begin();
   ui::noteActivity(millis());

@@ -28,7 +28,12 @@ Why not a `faith token`: bearer tokens get FAITH's `api` channel, and
 screen"). So a token-only device could chat but never answer Yes/No for locks
 and alarms. Paired-screen cookies get the `hub` channel, which can.
 
-Endpoints the device uses: `GET /api/health` (M1, done), `GET /api/session`,
+**Projects (done, read-only):** `GET /api/projects/glance` with a FAITH client token
+(`faith token add client <id> dash`) in `DASH_FAITH_TOKEN`. Pairing replaces the token in M6;
+a paired screen without a PIN sees the Family project only. Talking into a thread
+(`POST /api/projects/:id/threads/:thread/message`) comes with hold-to-talk.
+
+Endpoints the device uses: `GET /api/health` (M1, done), `GET /api/projects/glance` (done), `GET /api/session`,
 `POST /api/chat` (server-sent events), `POST /api/chat/confirm/:id`,
 `GET /api/approvals`, `POST /api/approvals/:id`, `POST /api/voice/transcribe`
 and `/api/voice/speak` (M6).
