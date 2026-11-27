@@ -32,35 +32,71 @@ const char* uploadError = "";
 // The share page: no outside fonts or scripts, works on any phone.
 const char kPage[] PROGMEM = R"HTML(<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>DASH files</title>
-<style>:root{--bg:#f6f1e7;--card:#fffaf0;--text:#2b2620;--muted:#6f665a;--gold:#9a7a12;--line:#e4dccb}
-@media (prefers-color-scheme:dark){:root{--bg:#1b1a18;--card:#2a2823;--text:#efe9dc;--muted:#a0988a;--gold:#c9a227;--line:#3a372f}}
+<style>:root{--bg:#f6f1e7;--card:#fffaf0;--text:#2b2620;--muted:#6f665a;--gold:#9a7a12;--line:#e4dccb;--bad:#a33a22}
+@media (prefers-color-scheme:dark){:root{--bg:#1b1a18;--card:#2a2823;--text:#efe9dc;--muted:#a0988a;--gold:#c9a227;--line:#3a372f;--bad:#e07a62}}
 body{margin:0;background:var(--bg);color:var(--text);font:16px/1.5 system-ui,sans-serif}
 main{max-width:640px;margin:0 auto;padding:16px}h1{font:600 1.6rem Georgia,serif;margin:.2em 0}
 .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:12px 0}
-ul{list-style:none;padding:0;margin:0}li{display:flex;justify-content:space-between;gap:8px;padding:10px 0;border-bottom:1px solid var(--line)}
-li:last-child{border:0}a{color:var(--gold)}small,.m{color:var(--muted)}
-button,label.b{display:inline-flex;align-items:center;min-height:44px;padding:10px 16px;border-radius:8px;border:0;background:var(--gold);color:var(--bg);font:inherit;cursor:pointer}
-:focus-visible{outline:3px solid var(--gold);outline-offset:2px}input[type=file]{position:absolute;opacity:0;width:1px}</style></head>
-<body><main><h1>DASH files</h1><p class="m" id="free">Loading...</p>
+ul{list-style:none;padding:0;margin:0}li{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid var(--line)}
+li:last-child{border:0}a{color:var(--gold)}small,.m{color:var(--muted)}.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+button,label.b{display:inline-flex;align-items:center;min-height:44px;min-width:44px;padding:8px 14px;border-radius:8px;border:0;background:var(--gold);color:var(--bg);font:inherit;cursor:pointer}
+button.q{background:transparent;color:var(--gold);border:1px solid var(--line)}button.del{background:transparent;color:var(--bad);border:1px solid var(--line)}
+.name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:none;border:0;color:var(--gold);text-align:left;padding:8px 0;text-decoration:underline;justify-content:flex-start}
+:focus-visible{outline:3px solid var(--gold);outline-offset:2px}input[type=file]{position:absolute;opacity:0;width:1px}
+#v{position:fixed;inset:0;background:#000;display:none;flex-direction:column;z-index:9;touch-action:pan-y}#v.on{display:flex}
+#v header{display:flex;align-items:center;gap:8px;padding:8px;color:#fff}#v header span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#v button{background:rgba(255,255,255,.15);color:#fff}#stage{flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative}
+#stage img,#stage video{max-width:100%;max-height:100%}#stage .msg{color:#ddd;padding:24px;text-align:center}
+#prev,#next{position:absolute;top:50%;transform:translateY(-50%);font-size:1.6rem}#prev{left:8px}#next{right:8px}</style></head>
+<body><main><h1 id="t">DASH files</h1><p class="m" id="free">Loading...</p>
+<div class="card" id="adm" hidden><strong>Owner</strong><p class="m" id="admst"></p>
+<div class="row"><button id="upt" type="button"></button><button id="stop" type="button" class="q">Stop sharing</button></div></div>
 <div class="card" id="up"><label class="b" for="f">Choose files to upload</label>
 <input id="f" type="file" multiple aria-label="Choose files to upload"> <span role="status" aria-live="polite" id="st"></span>
-<p class="m"><small>Uploads are added, never replace a file. Only the owner can delete.</small></p></div>
+<p class="m"><small id="rule">Uploads are added, never replace a file. Only the owner can delete.</small></p></div>
 <div class="card"><ul id="list" aria-live="polite"></ul></div></main>
+<div id="v" role="dialog" aria-modal="true" aria-label="Viewer"><header><button id="vx" type="button" aria-label="Close viewer">Close</button>
+<span id="vn"></span><small id="vi"></small><a id="vs" style="color:#fff">Save</a></header>
+<div id="stage"><button id="prev" type="button" aria-label="Previous">&lsaquo;</button><div id="slot"></div><button id="next" type="button" aria-label="Next">&rsaquo;</button></div></div>
 <script>
 const $=id=>document.getElementById(id);
+let key='';try{const h=new URLSearchParams(location.hash.slice(1));key=h.get('k')||sessionStorage.getItem('dashk')||'';if(h.get('k')){sessionStorage.setItem('dashk',key);history.replaceState(null,'',location.pathname)}}catch(_){}
+const H=()=>key?{'X-Dash-Key':key}:{};
+const IMG=/\.(jpe?g|png|gif|webp|bmp|heic)$/i,VID=/\.(mp4|m4v|mov|webm|3gp|mkv)$/i;
+let files=[],media=[],at=0;
 function size(b){const u=['B','KB','MB','GB'];let i=0;while(b>=1024&&i<3){b/=1024;i++}return(i?b.toFixed(1):b)+' '+u[i]}
-async function load(){try{const r=await fetch('/list');const j=await r.json();
-$('free').textContent=size(j.free)+' free'+(j.uploads?'':'. Uploads are turned off on the device.');$('up').hidden=!j.uploads;
-const l=$('list');l.innerHTML='';if(!j.files.length){l.innerHTML='<li class="m">No files yet.</li>'}
-for(const f of j.files){const li=document.createElement('li');const a=document.createElement('a');
-a.href='/f?n='+encodeURIComponent(f.n);a.textContent=f.n;
-const d=document.createElement('a');d.href=a.href+'&dl=1';d.textContent='Save';d.setAttribute('aria-label','Save '+f.n);
-const s=document.createElement('small');s.textContent=size(f.s)+' ';s.append(d);li.append(a,s);l.append(li)}}
+const url=n=>'/f?n='+encodeURIComponent(n);
+async function load(){try{const r=await fetch('/list',{headers:H()});if(r.status==403){$('free').textContent="Join the DASH-Share Wi-Fi to see these files.";return}
+const j=await r.json();files=j.files;media=files.filter(f=>IMG.test(f.n)||VID.test(f.n));
+$('free').textContent=size(j.free)+' free'+(j.uploads?'':'. Uploads are turned off.');$('up').hidden=!j.uploads;
+if(j.admin){$('adm').hidden=false;$('t').textContent='DASH files (owner)';$('rule').textContent='You can delete files here. Guests can only add.';
+$('admst').textContent=j.clients+' connected. Uploads are '+(j.uploads?'on':'off')+'.';$('upt').textContent=j.uploads?'Turn uploads off':'Turn uploads on';$('upt').onclick=()=>post('/api/admin/uploads?on='+(j.uploads?0:1))}
+else if(key){$('free').textContent+=" This owner link has expired: scan Admin on DASH again.";key='';try{sessionStorage.removeItem('dashk')}catch(_){}}
+const l=$('list');l.innerHTML='';if(!files.length){l.innerHTML='<li class="m">No files yet.</li>'}
+for(const f of files){const li=document.createElement('li');const b=document.createElement('button');b.className='name';b.type='button';b.textContent=f.n;
+const mi=media.indexOf(f);b.onclick=()=>mi>=0?show(mi):location.href=url(f.n);
+const s=document.createElement('small');s.textContent=size(f.s);const d=document.createElement('a');d.href=url(f.n)+'&dl=1';d.textContent='Save';d.setAttribute('aria-label','Save '+f.n);
+li.append(b,s,d);if(j.admin){const x=document.createElement('button');x.className='del';x.type='button';x.textContent='Delete';x.setAttribute('aria-label','Delete '+f.n);
+x.onclick=()=>{if(confirm('Delete '+f.n+'? This can\'t be undone.'))post('/api/admin/delete?n='+encodeURIComponent(f.n))};li.append(x)}l.append(li)}}
 catch(e){$('free').textContent="DASH isn't answering. Check you're still on the DASH-Share Wi-Fi."}}
+async function post(p){const r=await fetch(p,{method:'POST',headers:H()});const j=await r.json().catch(()=>({ok:false,error:'no answer'}));
+$('st').textContent=j.ok?'Done':"Didn't work: "+j.error;load()}
+$('stop').onclick=()=>{if(confirm('Stop sharing? Everyone is disconnected, you too.'))post('/api/admin/stop')};
+function show(i){at=(i+media.length)%media.length;const f=media[at];const s=$('slot');s.innerHTML='';
+let el;if(VID.test(f.n)){el=document.createElement('video');el.controls=true;el.playsInline=true;el.autoplay=true;el.preload='metadata';
+el.onerror=()=>{s.innerHTML='<p class="msg">This phone can\'t play this video. Save it and open it in another app.</p>'}}
+else{el=document.createElement('img');el.alt=f.n;el.onerror=()=>{s.innerHTML='<p class="msg">This phone can\'t show this picture. Save it instead.</p>'}}
+el.src=url(f.n);s.append(el);$('vn').textContent=f.n;$('vi').textContent=(at+1)+' of '+media.length;$('vs').href=url(f.n)+'&dl=1';
+$('v').classList.add('on');$('vx').focus();const nx=media[(at+1)%media.length];if(nx&&IMG.test(nx.n)){new Image().src=url(nx.n)}}
+function close(){$('slot').innerHTML='';$('v').classList.remove('on')}
+$('vx').onclick=close;$('prev').onclick=()=>show(at-1);$('next').onclick=()=>show(at+1);
+document.addEventListener('keydown',e=>{if(!$('v').classList.contains('on'))return;if(e.key==='Escape')close();if(e.key==='ArrowRight')show(at+1);if(e.key==='ArrowLeft')show(at-1)});
+let x0=null;$('stage').addEventListener('touchstart',e=>{x0=e.touches[0].clientX},{passive:true});
+$('stage').addEventListener('touchend',e=>{if(x0===null)return;const dx=e.changedTouches[0].clientX-x0;x0=null;if(Math.abs(dx)>50)show(at+(dx<0?1:-1))});
 $('f').onchange=async e=>{for(const file of e.target.files){await new Promise(res=>{const x=new XMLHttpRequest();
 const fd=new FormData();fd.append('file',file,file.name);x.upload.onprogress=p=>{$('st').textContent='Uploading '+file.name+': '+Math.round(100*p.loaded/p.total)+'%'};
 x.onload=()=>{let m='Done';try{const j=JSON.parse(x.responseText);m=j.ok?'Uploaded '+j.name:"Didn't upload: "+j.error}catch(_){}$('st').textContent=m;res()};
-x.onerror=()=>{$('st').textContent="Upload stopped. Move closer to DASH and try again.";res()};x.open('POST','/upload');x.send(fd)})}
+x.onerror=()=>{$('st').textContent="Upload stopped. Move closer to DASH and try again.";res()};x.open('POST','/upload');for(const[k,v]of Object.entries(H()))x.setRequestHeader(k,v);x.send(fd)})}
 e.target.value='';load()};load();
 </script></body></html>)HTML";
 
@@ -68,12 +104,36 @@ bool validName(const String& n, char* out, size_t size) {
   return dash::safeFileName(n.c_str(), out, size) && n == out;
 }
 
+// The owner's key from the admin QR, checked in constant time.
+bool isAdmin() {
+  String k = server.header("X-Dash-Key");
+  const char* want = self->adminKey();
+  size_t n = strlen(want);
+  if (!n || k.length() != n) return false;
+  uint8_t diff = 0;
+  for (size_t i = 0; i < n; i++) diff |= (uint8_t)(k[i] ^ want[i]);
+  return diff == 0;
+}
+
+// Guests only over DASH-Share; the owner (with the key) also from the home network.
+bool allowed() {
+  if (isAdmin()) return true;
+  if (server.client().localIP() == WiFi.softAPIP()) return true;
+  server.send(403, "application/json", "{\"ok\":false,\"error\":\"join the DASH-Share Wi-Fi\"}");
+  return false;
+}
+
 void handleList() {
+  if (!allowed()) return;
   self->noteGuest();
   String j = "{\"free\":";
   j += String((double)(SD.totalBytes() - SD.usedBytes()), 0);
   j += ",\"uploads\":";
   j += self->uploadsOn() ? "true" : "false";
+  if (isAdmin()) {
+    j += ",\"admin\":true,\"clients\":";
+    j += String(WiFi.softAPgetStationNum());
+  }
   j += ",\"files\":[";
   File dir = SD.open(kDir);
   bool first = true;
@@ -99,6 +159,7 @@ void handleList() {
 }
 
 void handleFile() {
+  if (!allowed()) return;
   self->noteGuest();
   char safe[64];
   if (!validName(server.arg("n"), safe, sizeof safe)) {
@@ -170,6 +231,11 @@ void handleUploadData() {
     self->noteGuest();
     uploadFailed = false;
     uploadError = "";
+    if (!isAdmin() && server.client().localIP() != WiFi.softAPIP()) {
+      uploadFailed = true;
+      uploadError = "join the DASH-Share Wi-Fi";
+      return;
+    }
     char base[56];
     if (!self->uploadsOn()) {
       uploadFailed = true;
@@ -209,6 +275,37 @@ void handleUploadData() {
   }
 }
 
+void adminReply(bool ok, const char* err) {
+  server.send(ok ? 200 : 400, "application/json", ok ? String("{\"ok\":true}") : String("{\"ok\":false,\"error\":\"") + err + "\"}");
+}
+
+bool needAdmin() {
+  if (isAdmin()) return true;
+  server.send(403, "application/json", "{\"ok\":false,\"error\":\"owner key missing or old: scan Admin on DASH\"}");
+  return false;
+}
+
+void handleDelete() {
+  if (!needAdmin()) return;
+  char safe[64];
+  if (!validName(server.arg("n"), safe, sizeof safe)) return adminReply(false, "that file name isn't allowed");
+  if (!SD.remove(String(kDir) + "/" + safe)) return adminReply(false, "it wasn't there");
+  self->changed();
+  adminReply(true, "");
+}
+
+void handleUploadsSwitch() {
+  if (!needAdmin()) return;
+  self->setUploads(server.arg("on") == "1");
+  adminReply(true, "");
+}
+
+void handleStop() {
+  if (!needAdmin()) return;
+  adminReply(true, "");
+  self->stopSoon();  // after this reply is sent
+}
+
 void handleUploadDone() {
   self->noteGuest();
   self->changed();
@@ -239,15 +336,24 @@ void FilesLink::begin() {
   tft.setSwapBytes(true);  // TJpg_Decoder gives byte-swapped pixels
   mounted_ = mount();
   if (mounted_) scan();
-  server.on("/", HTTP_GET, [] {
+  // The same page for guests and the owner; the admin QR adds the key
+  // after "#", which the browser never sends in a URL.
+  auto page = [] {
     self->noteGuest();
+    server.sendHeader("Cache-Control", "no-store");
+    server.sendHeader("Referrer-Policy", "no-referrer");
     server.send_P(200, "text/html", kPage);
-  });
+  };
+  server.on("/", HTTP_GET, page);
+  server.on("/admin", HTTP_GET, page);
+  server.on("/api/admin/delete", HTTP_POST, handleDelete);
+  server.on("/api/admin/uploads", HTTP_POST, handleUploadsSwitch);
+  server.on("/api/admin/stop", HTTP_POST, handleStop);
   server.on("/list", HTTP_GET, handleList);
   server.on("/f", HTTP_GET, handleFile);
   server.on("/upload", HTTP_POST, handleUploadDone, handleUploadData);
-  static const char* hdrs[] = {"Range"};
-  server.collectHeaders(hdrs, 1);
+  static const char* hdrs[] = {"Range", "X-Dash-Key"};
+  server.collectHeaders(hdrs, 2);
   server.onNotFound([] { server.send(404, "text/plain", "Not here. Open the page at http://192.168.4.1"); });
   updateDetail();
 }
@@ -283,7 +389,10 @@ void FilesLink::loop(uint32_t now, bool) {
       updateDetail();
     }
   }
-  if (now - lastActive_ > kIdleStopMs) stopShare();
+  if (now - lastActive_ > kIdleStopMs || (stopAt_ && (int32_t)(now - stopAt_) >= 0)) {
+    stopAt_ = 0;
+    stopShare();
+  }
 }
 
 bool FilesLink::startShare() {
@@ -291,6 +400,13 @@ bool FilesLink::startShare() {
   uint8_t r[10];
   esp_fill_random(r, sizeof r);
   dash::sharePassword(r, pass_, sizeof pass_);
+  // A new owner key each time too: two runs of 10, cut to 16.
+  uint8_t k[20];
+  esp_fill_random(k, sizeof k);
+  char k1[11], k2[11];
+  dash::sharePassword(k, k1, sizeof k1);
+  dash::sharePassword(k + 10, k2, sizeof k2);
+  snprintf(admin_, sizeof admin_, "%s%.6s", k1, k2);
   WiFi.mode(WIFI_AP_STA);
   // The share must sit on the same channel as the network DASH is on.
   int ch = WiFi.status() == WL_CONNECTED ? WiFi.channel() : 6;
@@ -301,7 +417,7 @@ bool FilesLink::startShare() {
   }
   server.begin();
   sharing_ = true;
-  showLink_ = false;
+  qrKind_ = 0;
   lastActive_ = millis();
   rev_++;
   updateDetail();
@@ -316,11 +432,17 @@ void FilesLink::stopShare() {
   sharing_ = false;
   clients_ = 0;
   pass_[0] = 0;  // a new password next time: old guests can't rejoin
+  admin_[0] = 0;  // and the old admin link stops working
   rev_++;
   updateDetail();
 }
 
 void FilesLink::noteGuest() { lastActive_ = millis(); }
+void FilesLink::setUploads(bool on) {
+  uploads_ = on;
+  rev_++;
+}
+void FilesLink::stopSoon() { stopAt_ = millis() + 1500; }
 void FilesLink::changed() {
   scan();
   updateDetail();
@@ -410,7 +532,7 @@ void FilesLink::closed() {
 void FilesLink::showQr() {
   if (!sharing_) startShare();
   mode_ = sharing_ ? Mode::Qr : Mode::Main;  // no card: main says why
-  showLink_ = false;
+  qrKind_ = 0;
   rev_++;
 }
 
@@ -483,23 +605,26 @@ void FilesLink::drawMain() {
 }
 
 void FilesLink::drawQrScreen() {
+  static const char* const kTabs[] = {"Wi-Fi", "Guest page", "Admin"};
   clearContent();
-  heading(showLink_ ? "Open the page" : "Scan to join");
+  heading(qrKind_ == 0 ? "Scan to join" : qrKind_ == 1 ? "Open the page" : "Owner page");
   text("Shared", W - 16, kTop + 20, 2, GOOD, TR_DATUM);
-  char code[96], a[64];
-  if (showLink_) snprintf(code, sizeof code, "http://%s/", WiFi.softAPIP().toString().c_str());
-  else dash::wifiJoinCode(kSsid, pass_, code, sizeof code);
-  int side = 220;
-  drawQr(code, (W - side) / 2, kTop + 50, side);
-  int y = kTop + 50 + side + 8;
-  if (showLink_) snprintf(a, sizeof a, "http://%s", WiFi.softAPIP().toString().c_str());
-  else snprintf(a, sizeof a, "%s, password %s", kSsid, pass_);
-  text(a, W / 2, y, 2, TEXT, TC_DATUM);
+  segments(kTabs, 3, qrKind_, kTop + 48);
+  char code[96], a[80];
+  String ip = WiFi.softAPIP().toString();
+  if (qrKind_ == 0) dash::wifiJoinCode(kSsid, pass_, code, sizeof code);
+  else if (qrKind_ == 1) snprintf(code, sizeof code, "http://%s/", ip.c_str());
+  else snprintf(code, sizeof code, "http://%s/admin#k=%s", ip.c_str(), admin_);
+  int side = 200, qy = kTop + 100;
+  drawQr(code, (W - side) / 2, qy, side);
+  int y = qy + side + 6;
+  if (qrKind_ == 0) snprintf(a, sizeof a, "%s, password %s", kSsid, pass_);
+  else if (qrKind_ == 1) snprintf(a, sizeof a, "Join DASH-Share, then http://%s", ip.c_str());
+  else snprintf(a, sizeof a, "Delete and manage. Only scan on your own phone.");
+  text(a, W / 2, y, 2, qrKind_ == 2 ? GOLD : TEXT, TC_DATUM);
   snprintf(a, sizeof a, "%u connected", clients_);
-  text(a, W / 2, y + 22, 2, MUTED, TC_DATUM);
-  int bw = (W - 24 - 8) / 2;
-  button(showLink_ ? "Wi-Fi code" : "Page link", 12, kNavY, bw, kNavH, false);
-  button("Done", 12 + bw + 8, kNavY, bw, kNavH, true);
+  text(a, 16, kNavY + 16, 2, MUTED);
+  button("Done", W - 12 - 128, kNavY, 128, kNavH, true);
 }
 
 void FilesLink::openViewer(int i) {
@@ -644,10 +769,13 @@ void FilesLink::tap(int x, int y, uint32_t now) {
     return;
   }
   if (mode_ == Mode::Qr) {
-    if (y < kNavY) return;
-    if (x < W / 2) showLink_ = !showLink_;
-    else mode_ = Mode::Main;
-    rev_++;
+    if (y >= kTop + 48 && y < kTop + 92) {
+      qrKind_ = segmentAt(x, 3);
+      rev_++;
+    } else if (y >= kNavY && x >= W - 12 - 128 - 12) {
+      mode_ = Mode::Main;
+      rev_++;
+    }
     return;
   }
   if (mode_ == Mode::Viewer) {

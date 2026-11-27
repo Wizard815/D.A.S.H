@@ -35,6 +35,9 @@ class FilesLink : public dash::Connector, public dash::ModView {
   void noteGuest();  // a guest did something: keeps the share from timing out
   void changed();    // a file was added
   void uploaded(const char* name);  // a guest uploaded this file
+  void setUploads(bool on);
+  void stopSoon();                  // stop sharing in a moment (after a reply)
+  const char* adminKey() const { return admin_; }
   // The quick QR button: starts sharing if needed and shows the big code.
   void showQr();
 
@@ -70,7 +73,10 @@ class FilesLink : public dash::Connector, public dash::ModView {
   uint32_t nextFrame_ = 0, frames_ = 0;
   char videoNote_[48] = "";
 
-  bool mounted_ = false, sharing_ = false, showLink_ = false, uploads_ = true;
+  bool mounted_ = false, sharing_ = false, uploads_ = true;
+  uint8_t qrKind_ = 0;  // 0 Wi-Fi join, 1 guest page, 2 admin page
+  char admin_[17] = "";  // owner key for this share session
+  uint32_t stopAt_ = 0;
   uint16_t files_ = 0;
   uint64_t used_ = 0, total_ = 0;
   char pass_[12] = "";

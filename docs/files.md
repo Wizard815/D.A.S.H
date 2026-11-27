@@ -8,8 +8,13 @@ It's built in: a **Files** tab, a Home card and a row in Links.
 - **Shared / Not shared** shows top right on Files, and the status bar says
   "sharing". While shared, everyone on DASH-Share can see every file in `/share`.
 - **QR code**: one tap from Files or from the Home card's QR button. It turns
-  sharing on if it was off and shows a big join code; **Page link** switches
-  to the page's code.
+  sharing on if it was off. Three codes, picked at the top:
+  - **Wi-Fi**: join DASH-Share.
+  - **Guest page**: the page where people view, save and upload.
+  - **Admin**: the same page as the owner, where you can delete files, turn
+    uploads on or off and stop sharing. The code carries a key that's new
+    each time you share, so only scan it on your own phone. Stopping sharing
+    ends the old key.
 - **New upload**: when a guest uploads, the Home card says "New upload: name"
   and Files shows it; tap it to view it.
 - **View**: photos and videos one at a time. Swipe, or tap the left or right
@@ -24,7 +29,12 @@ It's built in: a **Files** tab, a Home card and a row in Links.
 ## On a phone
 
 The phone does the decoding, so MP4, MOV and full-size photos play normally.
-Tap a file name to open or play it in the browser; **Save** downloads it.
+Tap a photo or video to open the viewer, then swipe (or use the arrows) to go
+to the next one without going back to the list. **Save** downloads a file.
+Guests see and play everything too; only the owner page can delete.
+DASH sends about 0.5 MB/s shared by everyone: one person can stream a 720p
+clip; for 1080p or several viewers, Save first. Files are only served over
+DASH-Share, except to the owner key, which also works from the home network.
 DASH answers Range requests, so a phone can seek in a video and start it
 before it has loaded. The DASH phone app (planned) uses the same `/list` and
 `/f?n=<name>` routes.

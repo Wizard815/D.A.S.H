@@ -22,6 +22,15 @@ a build flag (`DASH_MOD_<NAME>=1` in `platformio.ini`) and an On/Off switch in
 | A Home card | `homeCard()`: a title and one line, with "needs a look" said in words |
 | Frames | `onFrame()` gets every dash-mod frame whose `"m"` is its id, from ESP-NOW, MQTT or anything else |
 
+## The phone app
+
+DASH is one app: the device plus a phone app (planned). You install mods in
+the app; the app turns them on and sets them up on the device, and sends the
+device a firmware update when a mod needs code it doesn't have yet (an ESP32
+can't load code at run time, so device-side mods arrive as an update). The
+phone side of a mod does what the device can't: Atlas's owner tools, playing
+video, bigger screens.
+
 ## dash-mod frames (v1)
 
 The same small message works over every transport, so a mod doesn't care
