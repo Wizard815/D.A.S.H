@@ -1,6 +1,7 @@
 # Atlas mod (the truck)
 
-DASH shows the truck homelab: OBD2 gauges, check-engine codes in plain words,
+A.T.L.A.S (Adventure Tech: Link, Archive, Sync) is the truck homelab, in
+[Wizard815/A.T.L.A.S](https://github.com/Wizard815/A.T.L.A.S). DASH shows: OBD2 gauges, check-engine codes in plain words,
 sync status, weather, the Pi's own battery and GPS. Read-only.
 Message format: [atlas-protocol.md](atlas-protocol.md).
 
