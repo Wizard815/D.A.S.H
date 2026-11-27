@@ -14,6 +14,7 @@ touchscreen. Formerly called PocketAgent.
 | **Hermes Studio** | live agent activity (runs, tools, approvals) | Socket.IO `/global-agent`, `mcu.events.subscribe` |
 
 | **Atlas** (truck homelab, a mod) | OBD2 gauges, check-engine codes in words, sync, weather | ESP-NOW and MQTT on the truck Wi-Fi ([docs/mods/atlas.md](docs/mods/atlas.md)) |
+| **T.I.T.A.N** (homelab status, a mod) | what's up, what's down and why | `GET /api/glance` with a read-only token ([docs/mods/titan.md](docs/mods/titan.md)) |
 
 Every connector is optional and has its own on/off switch in device settings.
 
@@ -47,4 +48,4 @@ tested on hardware yet. See [firmware/README.md](firmware/README.md),
 - [Roadmap](docs/roadmap.md)
 - [Open questions](docs/open-questions.md)
 - [Files](docs/files.md)
-- [Mods](docs/mods/README.md), [Atlas](docs/mods/atlas.md), [Atlas protocol](docs/mods/atlas-protocol.md)
+- [Mods](docs/mods/README.md), [Atlas](docs/mods/atlas.md), [Atlas protocol](docs/mods/atlas-protocol.md), [T.I.T.A.N](docs/mods/titan.md)

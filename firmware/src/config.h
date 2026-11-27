@@ -42,6 +42,12 @@
 #ifndef DASH_ATLAS_SHARE_DIR
 #define DASH_ATLAS_SHARE_DIR "/dash/"  // the copyparty folder DASH's files go to
 #endif
+#ifndef DASH_TITAN_URL
+#define DASH_TITAN_URL ""  // T.I.T.A.N, e.g. http://titan.lan:8130; empty: no T.I.T.A.N mod
+#endif
+#ifndef DASH_TITAN_TOKEN
+#define DASH_TITAN_TOKEN ""  // T.I.T.A.N's TITAN_GLANCE_TOKEN
+#endif
 #ifndef DASH_ESPNOW_KEY
 #define DASH_ESPNOW_KEY ""  // 16 characters, the same on the bridge; empty: not encrypted
 #endif

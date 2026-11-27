@@ -1,9 +1,10 @@
 # Mods
 
 A mod is an integration for another app or device: its own screen, data
-source, settings and Home card. There are two so far: **FAITH** (its health
-check and the family's projects) and **Atlas**, the truck homelab
-([atlas.md](atlas.md)). Home Assistant, Overseer and Argos fit the same shape.
+source, settings and Home card. There are three so far: **FAITH** (its health
+check and the family's projects), **Atlas**, the truck homelab
+([atlas.md](atlas.md)), and **T.I.T.A.N**, the homelab status board
+([titan.md](titan.md)). Home Assistant, Overseer and Argos fit the same shape.
 The DASH phone app (planned) carries the same mods, so there is one app for
 DASH and its mods; FAITH stays its own server and family app.
 

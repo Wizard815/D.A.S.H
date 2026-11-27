@@ -41,3 +41,9 @@
 // any sender; without a key frames aren't encrypted.
 #define DASH_ATLAS_PEER_MAC ""
 #define DASH_ESPNOW_KEY ""
+
+// ---- T.I.T.A.N (the homelab status board mod). Optional. ----
+// T.I.T.A.N's address and its TITAN_GLANCE_TOKEN (read-only). For https,
+// also set DASH_TITAN_CA_PEM like DASH_FAITH_CA_PEM above.
+#define DASH_TITAN_URL ""
+#define DASH_TITAN_TOKEN ""

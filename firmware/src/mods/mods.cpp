@@ -15,6 +15,12 @@
 #if DASH_MOD_ATLAS
 #include "atlas_mod.h"
 #endif
+#ifndef DASH_MOD_TITAN
+#define DASH_MOD_TITAN 1
+#endif
+#if DASH_MOD_TITAN
+#include "titan_mod.h"
+#endif
 
 namespace mods {
 
@@ -24,6 +30,9 @@ FaithMod faith;
 #endif
 #if DASH_MOD_ATLAS
 AtlasMod atlas;
+#endif
+#if DASH_MOD_TITAN
+TitanMod titan;
 #endif
 
 void add(dash::ModList& list, dash::Registry& links, dash::Mod* m) {
@@ -43,6 +52,9 @@ void addAll(dash::ModList& list, dash::Registry& links) {
 #endif
 #if DASH_MOD_ATLAS
   add(list, links, &atlas);
+#endif
+#if DASH_MOD_TITAN
+  add(list, links, &titan);
 #endif
   // Next: Home Assistant, Overseer, Argos (docs/mods/README.md).
   // Three or more with a screen share a "Mods" tab.

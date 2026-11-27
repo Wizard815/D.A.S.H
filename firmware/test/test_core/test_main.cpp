@@ -8,6 +8,7 @@
 #include "glance.h"
 #include "atlas.h"
 #include "share.h"
+#include "titan.h"
 #include "mod.h"
 #include <math.h>
 #include <stdio.h>
@@ -539,6 +540,38 @@ void test_atlas_sync_helpers() {
   TEST_ASSERT_EQUAL(0, httpStatus("HTTP/1.1 2x"));
 }
 
+void test_titan_glance() {
+  const char* j = "{\"up\":11,\"down\":2,\"pending\":1,\"notes\":3,\"every\":60,"
+                  "\"down_list\":[{\"name\":\"Plex\",\"detail\":\"no answer\",\"cause\":\"Outside access\"},"
+                  "{\"name\":\"Minecraft\",\"detail\":\"container stopped\"}],"
+                  "\"services\":[{\"name\":\"Plex\",\"status\":\"down\"},{\"name\":\"FAITH\",\"status\":\"up\"},"
+                  "{\"name\":\"DnD sync\",\"status\":\"pending\"}]}";
+  TitanGlance g;
+  TEST_ASSERT_TRUE(parseTitan(j, strlen(j), g));
+  TEST_ASSERT_EQUAL(11, g.up);
+  TEST_ASSERT_EQUAL(3, g.notes);
+  TEST_ASSERT_EQUAL(2, g.nDown);
+  TEST_ASSERT_EQUAL(3, g.nServices);
+  TEST_ASSERT_EQUAL('d', g.services[0].status);
+  TEST_ASSERT_EQUAL('p', g.services[2].status);
+  char b[64];
+  titanSummary(g, b, sizeof b);
+  TEST_ASSERT_EQUAL_STRING("2 down: Plex, Minecraft", b);
+  titanDownWords(g.downs[0], b, sizeof b);
+  TEST_ASSERT_EQUAL_STRING("down because Outside access is down", b);
+  titanDownWords(g.downs[1], b, sizeof b);
+  TEST_ASSERT_EQUAL_STRING("container stopped", b);
+  g.down = 0;
+  titanSummary(g, b, sizeof b);
+  TEST_ASSERT_EQUAL_STRING("All 11 up", b);
+  g.down = 1;
+  g.nDown = 1;
+  titanSummary(g, b, sizeof b);
+  TEST_ASSERT_EQUAL_STRING("Plex is down", b);
+  TEST_ASSERT_FALSE(parseTitan("{\"events\":[]}", 13, g));
+  TEST_ASSERT_FALSE(parseTitan("nope", 4, g));
+}
+
 void test_share_password() {
   uint8_t r[10] = {0, 1, 2, 3, 4, 250, 251, 252, 253, 254};
   char p[11];
@@ -619,5 +652,6 @@ int main() {
   RUN_TEST(test_jpeg_scale);
   RUN_TEST(test_mjpeg_frames);
   RUN_TEST(test_atlas_sync_helpers);
+  RUN_TEST(test_titan_glance);
   return UNITY_END();
 }
