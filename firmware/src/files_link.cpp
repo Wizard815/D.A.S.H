@@ -9,6 +9,8 @@
 #include <qrcode.h>
 
 #include "board.h"
+#include "config.h"
+#include "net.h"
 #include "gfx.h"
 #include "share.h"
 
@@ -20,6 +22,8 @@ constexpr char kSsid[] = "DASH-Share";
 constexpr uint32_t kIdleStopMs = 30UL * 60UL * 1000UL;  // no guest for 30 min: stop sharing
 constexpr uint64_t kKeepFree = 1024ULL * 1024ULL;        // refuse uploads past this
 constexpr int kMaxGuests = 4;
+constexpr char kSyncLedger[] = "/.dash-atlas-synced";  // outside /share: never listed
+constexpr uint32_t kSyncCheckMs = 60000, kSyncRetryMs = 5UL * 60UL * 1000UL, kSyncReplyMs = 30000;
 
 SPIClass sdSpi(VSPI);
 WebServer server(80);
@@ -399,8 +403,9 @@ void FilesLink::scan() {
   rev_++;
 }
 
-void FilesLink::loop(uint32_t now, bool) {
+void FilesLink::loop(uint32_t now, bool netUp) {
   if (playing_) videoFrame(now);
+  syncLoop(now, netUp);
   if (!sharing_) return;
   server.handleClient();
   if (now - lastClientCheck_ >= 2000) {
@@ -483,6 +488,173 @@ int FilesLink::mediaIndex(const char* name) const {
   for (int i = 0; i < nMedia_; i++)
     if (!strcmp(media_[i], name)) return i;
   return -1;
+}
+
+// ---- Atlas sync ----------------------------------------------------------
+// On the truck Wi-Fi, DASH copies each file in /share to the Truck Share
+// (copyparty on the Pi) with a plain HTTP PUT as the write-only "dash"
+// account. A list on the card (name + size fingerprints) remembers what's
+// there, so nothing is sent twice. Not while DASH is sharing itself: the
+// share's guests get the Wi-Fi.
+namespace {
+WiFiClient syncClient;
+uint8_t syncBuf[4096];
+}  // namespace
+
+void FilesLink::syncSay(const char* s) {
+  if (strcmp(s, syncWords_)) {
+    snprintf(syncWords_, sizeof syncWords_, "%s", s);
+    rev_++;
+  }
+}
+
+void FilesLink::syncLoad() {
+  syncLoaded_ = true;
+  if (!synced_) synced_ = (uint32_t*)malloc(kSyncMax * sizeof(uint32_t));
+  nSynced_ = 0;
+  if (!synced_) return;
+  File f = SD.open(kSyncLedger);
+  if (!f) return;
+  char line[16];
+  while (f.available() && nSynced_ < kSyncMax) {
+    size_t n = f.readBytesUntil('\n', line, sizeof line - 1);
+    line[n] = 0;
+    uint32_t k = strtoul(line, nullptr, 16);
+    if (k) synced_[nSynced_++] = k;
+  }
+}
+
+bool FilesLink::syncHas(uint32_t key) const {
+  for (int i = 0; i < nSynced_; i++)
+    if (synced_[i] == key) return true;
+  return false;
+}
+
+bool FilesLink::syncPick() {
+  syncName_[0] = 0;
+  syncPending_ = 0;
+  File dir = SD.open(kDir);
+  for (File f = dir.openNextFile(); f; f = dir.openNextFile()) {
+    if (f.isDirectory()) continue;
+    const char* nm = f.name();
+    const char* base = strrchr(nm, '/');
+    base = base ? base + 1 : nm;
+    if (*base == '.' || strlen(base) >= sizeof syncName_) continue;
+    uint32_t k = dash::syncKey(base, f.size());
+    if (syncHas(k) || k == syncSkip_) continue;
+    syncPending_++;
+    if (!*syncName_) {
+      strcpy(syncName_, base);
+      syncSize_ = f.size();
+    }
+  }
+  return *syncName_;
+}
+
+void FilesLink::syncDone() {
+  uint32_t k = dash::syncKey(syncName_, syncSize_);
+  if (synced_ && nSynced_ < kSyncMax) synced_[nSynced_++] = k;
+  File l = SD.open(kSyncLedger, FILE_APPEND);
+  if (l) l.printf("%08lx %s\n", (unsigned long)k, syncName_);
+}
+
+void FilesLink::syncFail(const char* why, uint32_t now) {
+  char w[64];
+  snprintf(w, sizeof w, "Atlas: %s", why);
+  syncSay(w);
+  if (syncFile_) syncFile_.close();
+  syncClient.stop();
+  sync_ = Sync::Idle;
+  syncSkip_ = dash::syncKey(syncName_, syncSize_);  // try the others first
+  syncNext_ = now + kSyncRetryMs;
+}
+
+void FilesLink::syncLoop(uint32_t now, bool netUp) {
+  bool can = enabled && mounted_ && netUp && net::onAtlasWifi() && !sharing_ && *DASH_ATLAS_SHARE_PW;
+  if (!can) {
+    if (sync_ != Sync::Idle) {
+      if (syncFile_) syncFile_.close();
+      syncClient.stop();
+      sync_ = Sync::Idle;
+    }
+    syncSay(sharing_ && net::onAtlasWifi() && *DASH_ATLAS_SHARE_PW ? "Atlas sync waits while sharing" : "");
+    return;
+  }
+  if (sync_ == Sync::Idle) {
+    if ((int32_t)(now - syncNext_) < 0) return;
+    syncNext_ = now + kSyncCheckMs;
+    if (!syncLoaded_) syncLoad();
+    bool found = syncPick();
+    if (!found && syncSkip_) {  // only the one that failed is left: try it again
+      syncSkip_ = 0;
+      found = syncPick();
+    }
+    if (!found) {
+      char w[64];
+      snprintf(w, sizeof w, "All %u file%s on Atlas", files_, files_ == 1 ? " is" : "s are");
+      syncSay(files_ ? w : "");
+      return;
+    }
+    char path[200];
+    if (!dash::urlPathPart(syncName_, path, sizeof path)) return syncFail("name too long", now);
+    syncFile_ = SD.open(String(kDir) + "/" + syncName_);
+    if (!syncFile_) return syncFail("couldn't read the card", now);
+    const char* host = DASH_ATLAS_SHARE_HOST;
+    bool ok = *host ? syncClient.connect(host, DASH_ATLAS_SHARE_PORT, 3000)
+                    : syncClient.connect(IPAddress(net::gateway()), DASH_ATLAS_SHARE_PORT, 3000);
+    if (!ok) return syncFail("Truck Share isn't answering", now);
+    syncClient.printf(
+        "PUT %s%s HTTP/1.1\r\nHost: %s:%u\r\nPW: %s\r\nContent-Type: application/octet-stream\r\n"
+        "Content-Length: %llu\r\nConnection: close\r\n\r\n",
+        DASH_ATLAS_SHARE_DIR, path, *host ? host : IPAddress(net::gateway()).toString().c_str(),
+        (unsigned)DASH_ATLAS_SHARE_PORT, DASH_ATLAS_SHARE_PW, (unsigned long long)syncSize_);
+    syncLeft_ = syncSize_;
+    syncPct_ = 255;
+    sync_ = Sync::Sending;
+  }
+  if (sync_ == Sync::Sending) {
+    uint32_t start = millis();
+    while (syncLeft_ && millis() - start < 20) {  // ~20 ms a pass keeps touch and video smooth
+      size_t want = syncLeft_ < sizeof syncBuf ? (size_t)syncLeft_ : sizeof syncBuf;
+      size_t r = syncFile_.read(syncBuf, want);
+      if (!r) return syncFail("couldn't read the card", now);
+      if (syncClient.write(syncBuf, r) != r) return syncFail("the connection dropped", now);
+      syncLeft_ -= r;
+    }
+    uint8_t pct = syncSize_ ? (uint8_t)(100 - syncLeft_ * 100 / syncSize_) : 100;
+    if (pct / 10 != syncPct_ / 10) {
+      syncPct_ = pct;
+      char w[64];
+      snprintf(w, sizeof w, "To Atlas: %.30s %u%% (%u left)", syncName_, pct, syncPending_);
+      syncSay(w);
+    }
+    if (!syncLeft_) {
+      syncFile_.close();
+      sync_ = Sync::Reply;
+      syncSince_ = now;
+    }
+    return;
+  }
+  // Reply
+  if (!syncClient.available()) {
+    if (now - syncSince_ > kSyncReplyMs || !syncClient.connected()) syncFail("no answer from the Truck Share", now);
+    return;
+  }
+  char line[64];
+  size_t n = syncClient.readBytesUntil('\n', line, sizeof line - 1);
+  line[n] = 0;
+  int code = dash::httpStatus(line);
+  syncClient.stop();
+  sync_ = Sync::Idle;
+  if (code >= 200 && code < 300) {
+    syncDone();
+    syncNext_ = now;  // straight on to the next file
+    return;
+  }
+  char why[48];
+  if (code == 401 || code == 403) snprintf(why, sizeof why, "wrong password for the dash account");
+  else snprintf(why, sizeof why, "the Truck Share said %d", code);
+  syncFail(why, now);
 }
 
 dash::LinkState FilesLink::state() const { return mounted_ ? dash::LinkState::Up : dash::LinkState::Waiting; }
@@ -620,6 +792,12 @@ void FilesLink::drawMain() {
   button(uploads_ ? "Uploads: on" : "Uploads: off", btnX(1), btnY(1), kBtnW, kBtnH, false);
 
   int y = btnY(2) + 4;
+  if (*syncWords_) {
+    char cut[80];
+    fit(cut, sizeof cut, syncWords_, 2, W - 32);
+    text(cut, 16, y, 2, GOOD);
+    y += 24;
+  }
   if (sharing_) {
     snprintf(a, sizeof a, "Everyone on DASH-Share can see and download every file here. %u connected.", clients_);
     wrap(a, 16, y, W - 32, 2, MUTED, BG, 4);

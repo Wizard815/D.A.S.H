@@ -59,6 +59,33 @@ Rules: guests can't delete, and an upload never replaces a file
 spaces and `.-_()`. Delete files by putting the card in a computer for now.
 Sharing stops after 30 minutes with no one connected.
 
+## Sync to the Truck Share
+
+DASH's share is the simple version. In the truck, DASH copies its files to
+the Truck Share on Atlas (copyparty on the Pi), which has the fuller viewer,
+search and folders. People in the truck use that one.
+
+- It runs by itself when DASH is on the truck Wi-Fi and isn't sharing.
+- One file at a time, a few KB per loop, so the screen stays smooth. Files
+  shows "To Atlas: trail.mp4 40% (3 left)", then "All 12 files are on Atlas".
+- Each file goes once. A list on the card (`/.dash-atlas-synced`) remembers
+  what's sent; a file with a new size is sent again. Delete that list to send
+  everything again.
+- DASH never deletes anything on Atlas, and deleting a file on DASH leaves the
+  Atlas copy.
+
+Set the password of copyparty's `dash` account in `secrets.h`:
+
+```cpp
+#define DASH_ATLAS_SHARE_PW "..."
+```
+
+On the Pi, `dash` needs write-only access to a `/dash` folder (see
+A.T.L.A.S `brain/copyparty.conf`). DASH sends `PUT /dash/<name>` to port 3923
+on the truck router with the password in a `PW` header. Change the host, port
+or folder with `DASH_ATLAS_SHARE_HOST`, `DASH_ATLAS_SHARE_PORT` and
+`DASH_ATLAS_SHARE_DIR`.
+
 ## Limits
 
 - About 0.5 MB/s and up to 4 people at once: fine for photos, PDFs and music,
@@ -76,3 +103,5 @@ Sharing stops after 30 minutes with no one connected.
 | "Didn't upload: the SD card is full" | DASH keeps 1 MB free; make room on a computer |
 | Page says "DASH isn't answering" | the phone left DASH-Share (phones drop Wi-Fi with no internet); rejoin |
 | Old QR code doesn't join | each share gets a new password; scan the new code |
+| "Atlas: wrong password for the dash account" | `DASH_ATLAS_SHARE_PW` doesn't match copyparty, or `dash` can't write to `/dash` |
+| "Atlas: Truck Share isn't answering" | copyparty isn't running, or the Pi is off; DASH tries again in 5 minutes |

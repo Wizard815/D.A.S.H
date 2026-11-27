@@ -32,6 +32,10 @@
 #define DASH_ATLAS_MQTT_HOST ""
 #define DASH_ATLAS_MQTT_USER ""
 #define DASH_ATLAS_MQTT_PASS ""
+// Sync to the Truck Share: on the truck Wi-Fi, DASH copies its SD card files
+// to copyparty on the Pi (folder /dash), where phones get the fuller viewer.
+// The password of copyparty's "dash" account (write only); empty: no sync.
+#define DASH_ATLAS_SHARE_PW ""
 // ESP-NOW: the bridge's MAC (printed by the bridge at start) and a shared
 // 16-character key, the same as BRIDGE_ESPNOW_KEY. Without a MAC DASH hears
 // any sender; without a key frames aren't encrypted.

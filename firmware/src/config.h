@@ -30,6 +30,18 @@
 #ifndef DASH_ATLAS_PEER_MAC
 #define DASH_ATLAS_PEER_MAC ""  // the bridge's MAC; empty: hear any ESP-NOW sender
 #endif
+#ifndef DASH_ATLAS_SHARE_PW
+#define DASH_ATLAS_SHARE_PW ""  // copyparty "dash" account password; empty: no sync to Atlas
+#endif
+#ifndef DASH_ATLAS_SHARE_HOST
+#define DASH_ATLAS_SHARE_HOST ""  // empty: the truck network's router (the Atlas brain)
+#endif
+#ifndef DASH_ATLAS_SHARE_PORT
+#define DASH_ATLAS_SHARE_PORT 3923
+#endif
+#ifndef DASH_ATLAS_SHARE_DIR
+#define DASH_ATLAS_SHARE_DIR "/dash/"  // the copyparty folder DASH's files go to
+#endif
 #ifndef DASH_ESPNOW_KEY
 #define DASH_ESPNOW_KEY ""  // 16 characters, the same on the bridge; empty: not encrypted
 #endif

@@ -140,4 +140,48 @@ bool mjpegFrame(const uint8_t* b, size_t len, size_t* start, size_t* end) {
   return false;
 }
 
+bool urlPathPart(const char* name, char* out, size_t n) {
+  static const char hex[] = "0123456789ABCDEF";
+  size_t o = 0;
+  for (const unsigned char* p = (const unsigned char*)name; *p; p++) {
+    bool keep = (*p >= 'A' && *p <= 'Z') || (*p >= 'a' && *p <= 'z') || (*p >= '0' && *p <= '9') || *p == '-' ||
+                *p == '.' || *p == '_' || *p == '~';
+    size_t need = keep ? 1 : 3;
+    if (o + need >= n) {
+      if (n) out[0] = 0;
+      return false;
+    }
+    if (keep) {
+      out[o++] = (char)*p;
+    } else {
+      out[o++] = '%';
+      out[o++] = hex[*p >> 4];
+      out[o++] = hex[*p & 15];
+    }
+  }
+  if (!n) return false;
+  out[o] = 0;
+  return true;
+}
+
+uint32_t syncKey(const char* name, uint64_t size) {
+  uint32_t h = 2166136261u;  // FNV-1a
+  for (const unsigned char* p = (const unsigned char*)name; *p; p++) h = (h ^ *p) * 16777619u;
+  for (int i = 0; i < 8; i++) h = (h ^ (uint8_t)(size >> (8 * i))) * 16777619u;
+  return h ? h : 1;  // 0 means "empty slot"
+}
+
+int httpStatus(const char* line) {
+  if (strncmp(line, "HTTP/", 5)) return 0;
+  const char* sp = strchr(line, ' ');
+  if (!sp) return 0;
+  int code = 0;
+  for (int i = 1; i <= 3; i++) {
+    char c = sp[i];
+    if (c < '0' || c > '9') return 0;
+    code = code * 10 + (c - '0');
+  }
+  return code;
+}
+
 }  // namespace dash

@@ -521,6 +521,24 @@ void test_wifi_join_code() {
   wifiJoinCode("DASH-Share", "abcdefghij", tiny, sizeof tiny);
   TEST_ASSERT_TRUE(strlen(tiny) < sizeof tiny);
 }
+void test_atlas_sync_helpers() {
+  char b[64];
+  TEST_ASSERT_TRUE(urlPathPart("trip notes (2).txt", b, sizeof b));
+  TEST_ASSERT_EQUAL_STRING("trip%20notes%20%282%29.txt", b);
+  TEST_ASSERT_TRUE(urlPathPart("IMG_2041.jpg", b, sizeof b));
+  TEST_ASSERT_EQUAL_STRING("IMG_2041.jpg", b);
+  char tiny[6];
+  TEST_ASSERT_FALSE(urlPathPart("a b c", tiny, sizeof tiny));
+  TEST_ASSERT_EQUAL_STRING("", tiny);
+  TEST_ASSERT_NOT_EQUAL(syncKey("a.jpg", 10), syncKey("a.jpg", 11));
+  TEST_ASSERT_NOT_EQUAL(syncKey("a.jpg", 10), syncKey("b.jpg", 10));
+  TEST_ASSERT_EQUAL_UINT32(syncKey("a.jpg", 10), syncKey("a.jpg", 10));
+  TEST_ASSERT_EQUAL(201, httpStatus("HTTP/1.1 201 Created"));
+  TEST_ASSERT_EQUAL(403, httpStatus("HTTP/1.0 403 Forbidden\r"));
+  TEST_ASSERT_EQUAL(0, httpStatus("hello"));
+  TEST_ASSERT_EQUAL(0, httpStatus("HTTP/1.1 2x"));
+}
+
 void test_share_password() {
   uint8_t r[10] = {0, 1, 2, 3, 4, 250, 251, 252, 253, 254};
   char p[11];
@@ -600,5 +618,6 @@ int main() {
   RUN_TEST(test_media_kind);
   RUN_TEST(test_jpeg_scale);
   RUN_TEST(test_mjpeg_frames);
+  RUN_TEST(test_atlas_sync_helpers);
   return UNITY_END();
 }

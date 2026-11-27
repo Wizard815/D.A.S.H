@@ -42,4 +42,19 @@ uint8_t jpegScale(uint16_t w, uint16_t h, int maxW, int maxH);
 // next search starts. False: read more (keep the bytes from `start` on).
 bool mjpegFrame(const uint8_t* buf, size_t len, size_t* start, size_t* end);
 
+// Atlas sync: DASH copies its files to the Truck Share (copyparty on the
+// truck's Pi), which shows them with the fuller viewer.
+
+// Percent-encodes a file name for a URL path (keeps A-Z a-z 0-9 - . _ ~).
+// False if it doesn't fit.
+bool urlPathPart(const char* name, char* out, size_t n);
+
+// A short fingerprint of a file (name and size) for the "already on Atlas"
+// list. A file changed to a new size is sent again.
+uint32_t syncKey(const char* name, uint64_t size);
+
+// The status code from an HTTP reply's first line ("HTTP/1.1 201 Created"
+// -> 201). 0 if it isn't one.
+int httpStatus(const char* line);
+
 }  // namespace dash
