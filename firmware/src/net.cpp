@@ -9,6 +9,18 @@
 namespace net {
 
 namespace {
+// Home first, then Atlas's truck network if one is set. Each failed try
+// moves to the other, so in the truck DASH joins Atlas within about 30 s.
+struct Network {
+  const char* ssid;
+  const char* pass;
+  const char* label;  // for the status line
+};
+const Network kNets[] = {{DASH_WIFI_SSID, DASH_WIFI_PASS, "Wi-Fi"}, {DASH_ATLAS_WIFI_SSID, DASH_ATLAS_WIFI_PASS, "truck Wi-Fi"}};
+int nNets() { return *DASH_ATLAS_WIFI_SSID ? 2 : 1; }
+int cur = 0;
+char statusBuf[40] = "";
+
 dash::Backoff retry(2000, 60000);
 uint32_t nextTry = 0;
 bool wasUp = false;
@@ -20,7 +32,7 @@ void begin() {
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(false);  // we retry with backoff ourselves
   WiFi.setHostname("dash");
-  WiFi.begin(DASH_WIFI_SSID, DASH_WIFI_PASS);
+  WiFi.begin(kNets[0].ssid, kNets[0].pass);
   status = "joining Wi-Fi";
   nextTry = millis() + 15000;
 }
@@ -31,7 +43,8 @@ void loop(uint32_t now) {
     retry.reset();
     snprintf(ipText, sizeof ipText, "%s", WiFi.localIP().toString().c_str());
     configTzTime(DASH_TZ, DASH_NTP_SERVER);
-    status = "Wi-Fi on";
+    snprintf(statusBuf, sizeof statusBuf, "on %s (%s)", kNets[cur].label, kNets[cur].ssid);
+    status = statusBuf;
   }
   if (!isUp && wasUp) {
     ipText[0] = 0;
@@ -41,14 +54,19 @@ void loop(uint32_t now) {
   wasUp = isUp;
   if (!isUp && (int32_t)(now - nextTry) >= 0) {
     WiFi.disconnect();
-    WiFi.begin(DASH_WIFI_SSID, DASH_WIFI_PASS);
+    cur = (cur + 1) % nNets();
+    WiFi.begin(kNets[cur].ssid, kNets[cur].pass);
     // Allow 15 s to join, then wait out the backoff before the next attempt.
-    nextTry = now + 15000 + retry.fail(esp_random() % 1000);
-    status = retry.failures() > 3 ? "can't join Wi-Fi: check secrets.h" : "joining Wi-Fi";
+    // With two networks, the backoff only grows after both were tried.
+    nextTry = now + 15000 + (cur == 0 ? retry.fail(esp_random() % 1000) : 0);
+    if (retry.failures() > 3) status = "can't join Wi-Fi: check secrets.h";
+    else status = cur == 0 ? "joining Wi-Fi" : "joining truck Wi-Fi";
   }
 }
 
 bool up() { return wasUp; }
+bool onAtlasWifi() { return wasUp && cur == 1; }
+uint32_t gateway() { return wasUp ? (uint32_t)WiFi.gatewayIP() : 0; }
 int rssi() { return wasUp ? WiFi.RSSI() : 0; }
 const char* ip() { return ipText; }
 const char* statusText() { return status; }

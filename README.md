@@ -13,7 +13,17 @@ touchscreen. Formerly called PocketAgent.
 | **Pondering Orb** | tasks, today, chores, projects glance; mark done | HTTPS REST + token from `ORB_API_TOKENS` |
 | **Hermes Studio** | live agent activity (runs, tools, approvals) | Socket.IO `/global-agent`, `mcu.events.subscribe` |
 
+| **Atlas** (truck homelab, a mod) | OBD2 gauges, check-engine codes in words, sync, weather | ESP-NOW and MQTT on the truck Wi-Fi ([docs/mods/atlas.md](docs/mods/atlas.md)) |
+
 Every connector is optional and has its own on/off switch in device settings.
+
+**Files:** DASH keeps files on its microSD card and shares them over its own
+Wi-Fi with a QR code: people nearby view, download and upload from a browser,
+and only you can delete ([docs/files.md](docs/files.md)).
+
+**Mods** add integrations for other apps and devices, each with its own
+screen, settings and Home card ([docs/mods/README.md](docs/mods/README.md)).
+The first is Atlas, the truck homelab.
 
 ## Hardware (v0)
 
@@ -36,3 +46,5 @@ tested on hardware yet. See [firmware/README.md](firmware/README.md),
 - [Integrations](docs/integrations.md)
 - [Roadmap](docs/roadmap.md)
 - [Open questions](docs/open-questions.md)
+- [Files](docs/files.md)
+- [Mods](docs/mods/README.md), [Atlas](docs/mods/atlas.md), [Atlas protocol](docs/mods/atlas-protocol.md)

@@ -12,3 +12,24 @@
 #ifndef DASH_FAITH_TOKEN
 #define DASH_FAITH_TOKEN ""
 #endif
+
+#ifndef DASH_ATLAS_WIFI_SSID
+#define DASH_ATLAS_WIFI_SSID ""  // Atlas's truck network; empty: home Wi-Fi only
+#define DASH_ATLAS_WIFI_PASS ""
+#endif
+#ifndef DASH_ATLAS_MQTT_HOST
+#define DASH_ATLAS_MQTT_HOST ""  // empty: the truck network's router, which is the Atlas brain
+#endif
+#ifndef DASH_ATLAS_MQTT_PORT
+#define DASH_ATLAS_MQTT_PORT 1883
+#endif
+#ifndef DASH_ATLAS_MQTT_USER
+#define DASH_ATLAS_MQTT_USER ""
+#define DASH_ATLAS_MQTT_PASS ""
+#endif
+#ifndef DASH_ATLAS_PEER_MAC
+#define DASH_ATLAS_PEER_MAC ""  // the bridge's MAC; empty: hear any ESP-NOW sender
+#endif
+#ifndef DASH_ESPNOW_KEY
+#define DASH_ESPNOW_KEY ""  // 16 characters, the same on the bridge; empty: not encrypted
+#endif

@@ -1,12 +1,15 @@
-// D.A.S.H firmware, milestone M1: screen, touch, Wi-Fi, battery, buttons,
-// and the connector registry with a first link (FAITH health), plus FAITH's
-// family projects (read-only).
+// D.A.S.H firmware: screen, touch, Wi-Fi, battery, buttons, the links
+// registry (FAITH health, FAITH projects), Files on the microSD card with a
+// Wi-Fi share, and mods (Atlas, the truck homelab).
 #include <Arduino.h>
 
 #include "config.h"
 #include "connector.h"
 #include "faith_link.h"
+#include "files_link.h"
 #include "hw.h"
+#include "mod.h"
+#include "mods/mods.h"
 #include "net.h"
 #include "projects_link.h"
 #include "settings.h"
@@ -14,8 +17,10 @@
 
 namespace {
 dash::Registry links;
+dash::ModList modList;
 FaithLink faith(DASH_FAITH_URL);
 ProjectsLink projects(DASH_FAITH_URL, DASH_FAITH_TOKEN);
+FilesLink files;
 
 constexpr uint32_t kDimAfterMs = 60000;
 constexpr uint8_t kBright = 255, kDim = 24;
@@ -42,8 +47,11 @@ void setup() {
   links.add(&faith);
   projects.enabled = settings::linkEnabled(projects.name(), true);
   links.add(&projects);
+  files.enabled = settings::linkEnabled(files.name(), true);
+  links.add(&files);
+  mods::addAll(modList, links);
 
-  ui::begin(&links, &projects);  // may run touch calibration first
+  ui::begin(&links, &projects, &files, &modList);  // may run touch calibration first
   net::begin();
   links.begin();
   ui::noteActivity(millis());
@@ -65,6 +73,7 @@ void loop() {
   }
 
   net::loop(now);
+  mods::pump(modList, now);
   links.loop(now, net::up());
 
   uint32_t before = ui::lastActivity();

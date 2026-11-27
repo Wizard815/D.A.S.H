@@ -22,3 +22,18 @@
 // It's your own screen: your project, Family and (grown-ups) Parents.
 // Leave empty to turn the Projects screen off. Pairing (roadmap M6) replaces this.
 #define DASH_FAITH_TOKEN ""
+
+// ---- Atlas (the truck homelab mod). All optional: leave empty to skip. ----
+// Atlas's truck Wi-Fi. DASH tries home first, then this, so in the truck it
+// joins Atlas by itself. The MQTT broker is then the truck network's router.
+#define DASH_ATLAS_WIFI_SSID ""
+#define DASH_ATLAS_WIFI_PASS ""
+// Set only if the broker isn't the truck router (for example 192.168.50.2).
+#define DASH_ATLAS_MQTT_HOST ""
+#define DASH_ATLAS_MQTT_USER ""
+#define DASH_ATLAS_MQTT_PASS ""
+// ESP-NOW: the bridge's MAC (printed by the bridge at start) and a shared
+// 16-character key, the same as BRIDGE_ESPNOW_KEY. Without a MAC DASH hears
+// any sender; without a key frames aren't encrypted.
+#define DASH_ATLAS_PEER_MAC ""
+#define DASH_ESPNOW_KEY ""

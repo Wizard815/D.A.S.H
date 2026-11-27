@@ -1,0 +1,109 @@
+#include "share.h"
+
+#include <stdio.h>
+#include <string.h>
+
+namespace dash {
+
+bool safeFileName(const char* in, char* out, size_t n) {
+  if (!n) return false;
+  out[0] = 0;
+  if (!in) return false;
+  // Browsers may send a full path: keep the last part.
+  const char* base = in;
+  for (const char* p = in; *p; p++)
+    if (*p == '/' || *p == '\\') base = p + 1;
+  char tmp[128];
+  size_t o = 0;
+  for (const char* p = base; *p && o + 1 < sizeof tmp; p++) {
+    unsigned char c = (unsigned char)*p;
+    bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '.' || c == '-' || c == '_' || c == ' ' || c == '(' || c == ')';
+    tmp[o++] = ok ? (char)c : '_';
+  }
+  tmp[o] = 0;
+  // No leading dots or spaces (hidden files, "..").
+  char* s = tmp;
+  while (*s == '.' || *s == ' ') s++;
+  size_t len = strlen(s);
+  while (len && (s[len - 1] == ' ' || s[len - 1] == '.')) s[--len] = 0;
+  if (!len) return false;
+  if (len + 1 > n) {
+    // Too long: keep the extension when it is short.
+    const char* dot = strrchr(s, '.');
+    size_t ext = dot ? strlen(dot) : 0;
+    if (ext > 8 || ext + 2 > n) ext = 0;
+    size_t keep = n - 1 - ext;
+    memmove(out, s, keep);
+    if (ext) memcpy(out + keep, dot, ext);
+    out[keep + ext] = 0;
+    return true;
+  }
+  memcpy(out, s, len + 1);
+  return true;
+}
+
+void numberedName(const char* name, int attempt, char* out, size_t n) {
+  if (!n) return;
+  if (attempt <= 1) {
+    snprintf(out, n, "%s", name);
+    return;
+  }
+  const char* dot = strrchr(name, '.');
+  if (!dot || dot == name) dot = name + strlen(name);
+  char suffix[16];
+  snprintf(suffix, sizeof suffix, " (%d)", attempt);
+  size_t ext = strlen(dot), sl = strlen(suffix);
+  size_t stem = (size_t)(dot - name);
+  if (stem + sl + ext + 1 > n) stem = n > sl + ext + 1 ? n - sl - ext - 1 : 0;
+  snprintf(out, n, "%.*s%s%s", (int)stem, name, suffix, dot);
+}
+
+void fmtBytes(uint64_t b, char* buf, size_t n) {
+  const char* u[] = {"KB", "MB", "GB", "TB"};
+  if (b < 1024) {
+    snprintf(buf, n, "%u B", (unsigned)b);
+    return;
+  }
+  double v = (double)b / 1024.0;
+  int i = 0;
+  while (v >= 1024.0 && i < 3) {
+    v /= 1024.0;
+    i++;
+  }
+  snprintf(buf, n, "%.1f %s", v, u[i]);
+}
+
+namespace {
+size_t escaped(char* out, size_t o, size_t n, const char* s) {
+  for (; s && *s && o + 2 < n; s++) {
+    if (strchr("\\;,:\"", *s)) out[o++] = '\\';
+    out[o++] = *s;
+  }
+  return o;
+}
+}  // namespace
+
+void wifiJoinCode(const char* ssid, const char* pass, char* buf, size_t n) {
+  if (!n) return;
+  size_t o = 0;
+  bool open = !pass || !*pass;
+  int w = snprintf(buf, n, "WIFI:T:%s;S:", open ? "nopass" : "WPA");
+  o = w > 0 ? (size_t)w : 0;
+  if (o >= n) { buf[n - 1] = 0; return; }
+  o = escaped(buf, o, n, ssid);
+  if (!open) {
+    if (o + 3 < n) { memcpy(buf + o, ";P:", 3); o += 3; }
+    o = escaped(buf, o, n, pass);
+  }
+  if (o + 3 < n) { memcpy(buf + o, ";;", 2); o += 2; }
+  buf[o < n ? o : n - 1] = 0;
+}
+
+void sharePassword(const uint8_t* r, char* out, size_t n) {
+  static const char kSet[] = "abcdefghjkmnpqrstuvwxyz23456789";  // no 0 O 1 l I i o
+  size_t len = n > 11 ? 10 : (n ? n - 1 : 0);
+  for (size_t i = 0; i < len; i++) out[i] = kSet[r[i] % (sizeof kSet - 1)];
+  if (n) out[len] = 0;
+}
+
+}  // namespace dash

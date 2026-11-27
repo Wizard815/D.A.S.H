@@ -1,66 +1,93 @@
 #include "ui.h"
 
 #include <Arduino.h>
-#include <TFT_eSPI.h>
 #include <WiFi.h>
 #include <time.h>
 
 #include "battery.h"
+#include "files_link.h"
+#include "gfx.h"
 #include "hw.h"
+#include "mod.h"
+#include "mods/mods.h"
+#include "mods/view.h"
 #include "net.h"
 #include "projects_link.h"
 #include "settings.h"
 
 #ifndef DASH_VERSION
-#define DASH_VERSION "0.1.0-m1"
+#define DASH_VERSION "0.2.0-mods"
 #endif
 
 namespace ui {
 
 namespace {
-TFT_eSPI tft;
+using namespace gfx;
+
 dash::Registry* links = nullptr;
 ProjectsLink* projects = nullptr;
+FilesLink* files = nullptr;
+dash::ModList* modList = nullptr;
 
-// Neutral dark with a gold accent, to sit next to FAITH's look.
-uint16_t BG, CARD, TEXT, MUTED, GOLD, OK, BAD;
+// Tabs: Home, Projects, Files, then one mod by name (or "Mods" when more than
+// one has a screen), then Links. Device sits under Links. Five at most, so
+// each stays over 60 px wide.
+struct Tab {
+  const char* name;
+  Screen screen;
+  dash::Mod* mod;  // for Screen::Mod
+};
+constexpr int kMaxTabs = 5;
+Tab tabs[kMaxTabs];
+int nTabs = 0;
 
-constexpr int W = 320, H = 480;
-constexpr int kBarH = 32;              // status bar
-constexpr int kTabH = 56;              // tab bar, comfortably over 44 px
-constexpr int kTabY = H - kTabH;
-constexpr int kTop = kBarH, kBottom = kTabY;
-constexpr int kTabs = 4;               // Home, Projects, Links, Device
-const char* kTabNames[kTabs] = {"Home", "Projects", "Links", "Device"};
-
-constexpr int kRowH = 72, kRowY0 = kTop + 52;
-constexpr int kToggleW = 84, kToggleH = 48;
+constexpr int kRowH = 64, kRowY0 = kTop + 52;
+constexpr int kToggleW = 84, kToggleH = 44;
 
 Screen screen = Screen::Home, beforeTalk = Screen::Home;
+dash::Mod* openMod = nullptr;      // the mod on Screen::Mod or Screen::ModSettings
+dash::Mod* modsBack = nullptr;     // came from the Mods list
 bool needFull = true;
 uint32_t lastTick = 0, lastTouch = 0, activity = 0;
 bool touching = false;
-uint32_t drawnLinksRev = 0, drawnHomeProjects = 0;
-char drawnClock[8] = "";
+uint32_t drawnLinksRev = 0;
+char drawnHome[200] = "";
 char drawnBar[40] = "";
 
-// ---------- small helpers ----------
-void text(const char* s, int x, int y, uint8_t font, uint16_t fg, uint8_t datum = TL_DATUM, int pad = 0) {
-  tft.setTextDatum(datum);
-  tft.setTextColor(fg, BG);
-  tft.setTextPadding(pad);
-  tft.drawString(s, x, y, font);
-  tft.setTextPadding(0);
+void buildTabs() {
+  nTabs = 0;
+  tabs[nTabs++] = {"Home", Screen::Home, nullptr};
+  tabs[nTabs++] = {"Projects", Screen::Projects, nullptr};
+  tabs[nTabs++] = {"Files", Screen::Files, nullptr};
+  dash::Mod* shown[dash::ModList::kMax];
+  int n = modList ? modList->screens(shown, dash::ModList::kMax) : 0;
+  if (n == 1) tabs[nTabs++] = {shown[0]->name(), Screen::Mod, shown[0]};
+  else if (n > 1) tabs[nTabs++] = {"Mods", Screen::Mods, nullptr};
+  tabs[nTabs++] = {"Links", Screen::Links, nullptr};
 }
 
-void clearContent() { tft.fillRect(0, kTop, W, kBottom - kTop, BG); }
+// Which tab shows as selected for the current screen.
+int currentTab() {
+  for (int i = 0; i < nTabs; i++) {
+    if (tabs[i].screen == Screen::Mod && screen == Screen::Mod && tabs[i].mod == openMod) return i;
+    if (tabs[i].screen == Screen::Mods && (screen == Screen::Mods || screen == Screen::Mod)) return i;
+    if (tabs[i].screen == screen && screen != Screen::Mod) return i;
+    if (tabs[i].screen == Screen::Links && (screen == Screen::Device || screen == Screen::ModSettings)) return i;
+  }
+  return -1;
+}
 
-void heading(const char* s) { text(s, 16, kTop + 14, 4, TEXT); }
+dash::ModView* currentView() {
+  if (screen == Screen::Files) return files;
+  if (screen == Screen::Mod && openMod) return openMod->view();
+  return nullptr;
+}
 
 // ---------- status bar ----------
 void drawBar(bool force) {
   char left[24], right[16], sig[40];
-  snprintf(left, sizeof left, "%s", net::up() ? (net::rssi() > -67 ? "Wi-Fi good" : "Wi-Fi weak") : "No Wi-Fi");
+  const char* share = files && files->sharing() ? ", sharing" : "";
+  snprintf(left, sizeof left, "%s%s", net::up() ? (net::onAtlasWifi() ? "Truck Wi-Fi" : net::rssi() > -67 ? "Wi-Fi good" : "Wi-Fi weak") : "No Wi-Fi", share);
   uint32_t mv = hw::batteryMv();
   if (mv >= dash::kBatteryUsbMv) snprintf(right, sizeof right, "USB power");
   else snprintf(right, sizeof right, "%s%u%%", mv < dash::kBatteryLowMv ? "Low " : "", dash::batteryPercent(mv));
@@ -77,23 +104,76 @@ void drawBar(bool force) {
 void drawTabs() {
   tft.fillRect(0, kTabY, W, kTabH, BG);
   tft.drawFastHLine(0, kTabY, W, CARD);
-  int tw = W / kTabs;
-  for (int i = 0; i < kTabs; i++) {
-    bool on = (int)screen == i;
+  int tw = W / nTabs, sel = currentTab();
+  for (int i = 0; i < nTabs; i++) {
+    bool on = i == sel;
     int x = i * tw;
     if (on) {
       tft.fillRect(x + 4, kTabY + 4, tw - 8, kTabH - 8, CARD);
-      tft.fillRect(x + 16, kTabY + kTabH - 8, tw - 32, 3, GOLD);  // underline: not colour alone
+      tft.fillRect(x + 12, kTabY + kTabH - 8, tw - 24, 3, GOLD);  // underline: not colour alone
     }
     tft.setTextDatum(MC_DATUM);
     tft.setTextColor(on ? TEXT : MUTED, on ? CARD : BG);
-    uint8_t font = tft.textWidth(kTabNames[i], 4) <= tw - 12 ? 4 : 2;
-    tft.drawString(kTabNames[i], x + tw / 2, kTabY + kTabH / 2 - 2, font);
+    uint8_t font = tft.textWidth(tabs[i].name, 4) <= tw - 12 ? 4 : 2;
+    tft.drawString(tabs[i].name, x + tw / 2, kTabY + kTabH / 2 - 2, font);
   }
 }
 
 // ---------- Home ----------
+// Clock and date, then cards: links, projects, files, then each mod's.
+constexpr int kCardH = 64, kCardGap = 8, kCardY0 = kTop + 150;
+constexpr int kMaxCards = (kBottom - 4 - kCardY0 + kCardGap) / (kCardH + kCardGap);
+struct Card {
+  dash::HomeCard c;
+  Screen open;
+  dash::Mod* mod;
+};
+Card cards[kMaxCards];
+int nCards = 0;
+
+void collectCards(uint32_t now) {
+  nCards = 0;
+  // Links only when something needs a look; it's quiet otherwise.
+  int problems = links ? links->problems() : 0;
+  if (problems) {
+    Card& k = cards[nCards++];
+    k = Card();
+    snprintf(k.c.title, sizeof k.c.title, "Links");
+    snprintf(k.c.line, sizeof k.c.line, "%d link%s need%s a look", problems, problems == 1 ? "" : "s", problems == 1 ? "s" : "");
+    k.c.attention = true;
+    k.open = Screen::Links;
+  }
+  // Mods with something to say come before the everyday cards.
+  if (modList)
+    for (int i = 0; i < modList->count() && nCards < kMaxCards; i++) {
+      dash::Mod* m = modList->at(i);
+      if (!m->enabled) continue;
+      Card& k = cards[nCards];
+      k = Card();
+      if (!m->homeCard(k.c, now)) continue;
+      k.open = m->hasScreen() ? Screen::Mod : Screen::Links;
+      k.mod = m;
+      nCards++;
+    }
+  if (projects && projects->enabled && nCards < kMaxCards) {
+    Card& k = cards[nCards++];
+    k = Card();
+    snprintf(k.c.title, sizeof k.c.title, "Projects");
+    if (projects->hasGlance()) dash::glanceSummary(projects->glance(), k.c.line, sizeof k.c.line);
+    else snprintf(k.c.line, sizeof k.c.line, "Asking FAITH...");
+    k.c.attention = projects->hasGlance() && projects->glance().needsYou;
+    k.open = Screen::Projects;
+  }
+  if (files && files->enabled && nCards < kMaxCards) {
+    Card& k = cards[nCards++];
+    k = Card();
+    files->homeCard(k.c);
+    k.open = Screen::Files;
+  }
+}
+
 void drawHome(bool full) {
+  uint32_t now = millis();
   char clock[8] = "--:--", date[32] = "Clock not set yet";
   if (net::timeValid()) {
     time_t t = time(nullptr);
@@ -102,109 +182,202 @@ void drawHome(bool full) {
     strftime(clock, sizeof clock, "%H:%M", &tmv);
     strftime(date, sizeof date, "%A %e %B", &tmv);
   }
-  bool linksChanged = links && links->revision() != drawnLinksRev;
-  uint32_t pr = projects ? projects->revision() : 0;
-  if (!full && strcmp(clock, drawnClock) == 0 && !linksChanged && pr == drawnHomeProjects) return;
-  strcpy(drawnClock, clock);
-  if (links) drawnLinksRev = links->revision();
-  drawnHomeProjects = pr;
+  collectCards(now);
+  // Redraw only when something on it changed.
+  char sig[sizeof drawnHome];
+  int o = snprintf(sig, sizeof sig, "%s|", clock);
+  for (int i = 0; i < nCards && o < (int)sizeof sig; i++) o += snprintf(sig + o, sizeof sig - o, "%s%s%d|", cards[i].c.title, cards[i].c.line, cards[i].c.attention);
+  if (!full && strcmp(sig, drawnHome) == 0) return;
+  strcpy(drawnHome, sig);
 
-  if (full) clearContent();
-  text(clock, W / 2, kTop + 40, 7, TEXT, TC_DATUM, W - 40);
-  text(date, W / 2, kTop + 110, 4, MUTED, TC_DATUM, W - 20);
-
-  // Links summary card.
-  int y = kTop + 170;
-  tft.fillRoundRect(12, y, W - 24, 84, 10, CARD);
-  tft.setTextDatum(TL_DATUM);
-  tft.setTextColor(TEXT, CARD);
-  int problems = links ? links->problems() : 0;
-  char line[40];
-  if (problems == 0) snprintf(line, sizeof line, "All links connected");
-  else snprintf(line, sizeof line, "%d link%s need%s a look", problems, problems == 1 ? "" : "s", problems == 1 ? "s" : "");
-  tft.drawString(line, 28, y + 16, 4);
-  tft.setTextColor(MUTED, CARD);
-  tft.drawString(problems ? "Open Links for details" : "Hermes, Orb and Studio come next", 28, y + 52, 2);
-
-  y += 100;
-  tft.fillRoundRect(12, y, W - 24, 84, 10, CARD);
-  tft.setTextColor(TEXT, CARD);
-  if (projects && projects->enabled) {
-    // Tap it to open Projects.
-    tft.drawString("Projects", 28, y + 16, 4);
-    char sum[40];
-    if (projects->hasGlance()) dash::glanceSummary(projects->glance(), sum, sizeof sum);
-    else snprintf(sum, sizeof sum, "Asking FAITH...");
-    bool needs = projects->hasGlance() && projects->glance().needsYou;
-    tft.setTextColor(needs ? GOLD : MUTED, CARD);
-    tft.drawString(sum, 28, y + 52, 2);
-    tft.setTextColor(MUTED, CARD);
-    tft.setTextDatum(TR_DATUM);
-    tft.drawString("Open >", W - 28, y + 16, 2);
-  } else {
-    tft.drawString("Next task", 28, y + 16, 4);
-    tft.setTextColor(MUTED, CARD);
-    tft.drawString("Shows here once Orb is linked (M4)", 28, y + 52, 2);
+  clearContent();
+  text(clock, W / 2, kTop + 30, 7, TEXT, TC_DATUM, W - 40);
+  text(date, W / 2, kTop + 100, 4, MUTED, TC_DATUM, W - 20);
+  char line[64];
+  for (int i = 0; i < nCards; i++) {
+    int y = kCardY0 + i * (kCardH + kCardGap);
+    const dash::HomeCard& c = cards[i].c;
+    tft.fillRoundRect(12, y, W - 24, kCardH, 10, CARD);
+    if (c.attention) tft.fillRect(12, y + 8, 4, kCardH - 16, GOLD);  // with words below, never alone
+    textOn(c.title, 28, y + 8, 4, TEXT, CARD);
+    textOn("Open >", W - 28, y + 12, 2, MUTED, CARD, TR_DATUM);
+    fit(line, sizeof line, c.line, 2, W - 56);
+    textOn(line, 28, y + 40, 2, c.attention ? GOLD : MUTED, CARD);
   }
+  if (nCards == 0) text("Nothing to show yet.", W / 2, kCardY0 + 20, 2, MUTED, TC_DATUM);
 }
-constexpr int kHomeProjectsY = kTop + 270;
 
 // ---------- Links ----------
+// Each link with its state in words and an On/Off switch. Mods with
+// settings show "Settings >" under their name: tap the left of the row.
+constexpr int kDeviceBtnY = kNavY;
+int maxLinkRows() { return (kDeviceBtnY - 8 - kRowY0) / kRowH; }
+
+dash::Mod* modFor(dash::Connector* c) {
+  for (int k = 0; modList && k < modList->count(); k++)
+    if (modList->at(k) == c) return modList->at(k);
+  return nullptr;
+}
+
 void drawLinks(bool full) {
   if (!links) return;
   if (!full && links->revision() == drawnLinksRev) return;
   drawnLinksRev = links->revision();
   clearContent();
   heading("Links");
-  for (int i = 0; i < links->count(); i++) {
+  int rows = min(links->count(), maxLinkRows());
+  for (int i = 0; i < rows; i++) {
     dash::Connector* c = links->at(i);
+    dash::Mod* m = modFor(c);
     int y = kRowY0 + i * kRowH;
     dash::LinkState s = c->enabled ? c->state() : dash::LinkState::Off;
-    uint16_t dot = s == dash::LinkState::Up ? OK : s == dash::LinkState::Off ? MUTED : s == dash::LinkState::Error ? BAD : GOLD;
-    tft.fillRoundRect(12, y, W - 24, kRowH - 8, 10, CARD);
-    tft.fillCircle(30, y + 22, 6, dot);
-    tft.setTextDatum(TL_DATUM);
-    tft.setTextColor(TEXT, CARD);
-    tft.drawString(c->name(), 46, y + 10, 4);
-    char line[64];
+    uint16_t dot = s == dash::LinkState::Up ? GOOD : s == dash::LinkState::Off ? MUTED : s == dash::LinkState::Error ? BAD : GOLD;
+    tft.fillRoundRect(12, y, W - 24, kRowH - 6, 10, CARD);
+    tft.fillCircle(28, y + 18, 6, dot);
+    textOn(c->name(), 42, y + 8, 4, TEXT, CARD);
+    if (m && m->settingCount()) textOn("Settings >", 42 + tft.textWidth(c->name(), 4) + 10, y + 12, 2, GOLD, CARD);
+    char line[80], cut[80];
     const char* d = c->enabled ? c->detail() : "";
     snprintf(line, sizeof line, "%s%s%s", dash::linkStateText(s), *d ? ": " : "", d);
-    tft.setTextColor(MUTED, CARD);
-    tft.drawString(line, 46, y + 40, 2);
+    fit(cut, sizeof cut, line, 2, W - 24 - kToggleW - 54);
+    textOn(cut, 42, y + 36, 2, MUTED, CARD);
     // On/off switch, labelled with words.
-    int bx = W - 24 - kToggleW, by = y + (kRowH - 8 - kToggleH) / 2;
+    int bx = W - 20 - kToggleW, by = y + (kRowH - 6 - kToggleH) / 2;
     tft.fillRoundRect(bx, by, kToggleW, kToggleH, 8, c->enabled ? GOLD : BG);
     tft.drawRoundRect(bx, by, kToggleW, kToggleH, 8, GOLD);
-    tft.setTextDatum(MC_DATUM);
-    tft.setTextColor(c->enabled ? BG : TEXT, c->enabled ? GOLD : BG);
-    tft.drawString(c->enabled ? "On" : "Off", bx + kToggleW / 2, by + kToggleH / 2, 4);
+    textOn(c->enabled ? "On" : "Off", bx + kToggleW / 2, by + kToggleH / 2, 4, c->enabled ? BG : TEXT, c->enabled ? GOLD : BG, MC_DATUM);
   }
   if (links->count() == 0) text("No links set up.", 16, kRowY0, 4, MUTED);
+  navButton("Device info", 12, W - 24, false);
 }
 
-bool tapLinks(int x, int y) {
-  if (!links) return false;
-  for (int i = 0; i < links->count(); i++) {
+void tapLinks(int x, int y) {
+  if (!links) return;
+  if (y >= kDeviceBtnY) {
+    show(Screen::Device);
+    return;
+  }
+  int rows = min(links->count(), maxLinkRows());
+  for (int i = 0; i < rows; i++) {
     int ry = kRowY0 + i * kRowH;
-    int bx = W - 24 - kToggleW;
+    if (y < ry || y >= ry + kRowH - 6) continue;
+    dash::Connector* c = links->at(i);
+    int bx = W - 20 - kToggleW;
     // Generous hit box: the whole right part of the row.
-    if (y >= ry && y < ry + kRowH - 8 && x >= bx - 12) {
-      dash::Connector* c = links->at(i);
+    if (x >= bx - 12) {
       c->enabled = !c->enabled;
       settings::setLinkEnabled(c->name(), c->enabled);
       if (c->enabled) c->begin();
+      if (!c->enabled && c == files) files->stopShare();
+      if (modFor(c)) {
+        buildTabs();
+        drawTabs();
+      }
       drawLinks(true);
-      return true;
+      return;
+    }
+    dash::Mod* m = modFor(c);
+    if (m && m->settingCount()) {
+      openMod = m;
+      show(Screen::ModSettings);
+    }
+    return;
+  }
+}
+
+// ---------- a mod's settings ----------
+constexpr int kSetRowH = 64, kSetY0 = kTop + 56, kSetBtnW = 120;
+
+void drawModSettings() {
+  clearContent();
+  if (!openMod) return;
+  char h[40];
+  snprintf(h, sizeof h, "%s settings", openMod->name());
+  heading(h);
+  for (int i = 0; i < openMod->settingCount(); i++) {
+    dash::ModSetting* s = openMod->setting(i);
+    int y = kSetY0 + i * kSetRowH;
+    tft.fillRoundRect(12, y, W - 24, kSetRowH - 8, 10, CARD);
+    textOn(s->label, 24, y + 18, 4, TEXT, CARD);
+    button(s->current(), W - 20 - kSetBtnW, y + 6, kSetBtnW, kSetRowH - 20, true);
+  }
+  text("Tap a choice to change it. Saved right away.", 16, kNavY - 28, 2, MUTED);
+  navButton("Back to Links", 12, W - 24, false);
+}
+
+void tapModSettings(int x, int y) {
+  if (!openMod) return;
+  if (y >= kNavY) {
+    show(Screen::Links);
+    return;
+  }
+  for (int i = 0; i < openMod->settingCount(); i++) {
+    int ry = kSetY0 + i * kSetRowH;
+    if (y >= ry && y < ry + kSetRowH - 8) {
+      openMod->setting(i)->next();
+      mods::settingChanged(openMod, i);
+      drawModSettings();
+      return;
     }
   }
-  return false;
+}
+
+// ---------- the Mods list (more than one mod with a screen) ----------
+void drawMods() {
+  clearContent();
+  heading("Mods");
+  dash::Mod* shown[dash::ModList::kMax];
+  int n = modList ? modList->screens(shown, dash::ModList::kMax) : 0;
+  uint32_t now = millis();
+  for (int i = 0; i < n && i < kMaxCards + 1; i++) {
+    int y = kTop + 52 + i * (kCardH + kCardGap);
+    dash::HomeCard c;
+    shown[i]->homeCard(c, now);
+    tft.fillRoundRect(12, y, W - 24, kCardH, 10, CARD);
+    textOn(shown[i]->name(), 28, y + 8, 4, TEXT, CARD);
+    textOn("Open >", W - 28, y + 12, 2, MUTED, CARD, TR_DATUM);
+    char line[64];
+    fit(line, sizeof line, *c.line ? c.line : shown[i]->detail(), 2, W - 56);
+    textOn(line, 28, y + 40, 2, c.attention ? GOLD : MUTED, CARD);
+  }
+  if (n == 0) wrap("No mods are on. Turn one on in Links.", 16, kTop + 60, W - 32, 2, MUTED, BG, 2);
+}
+
+void openModScreen(dash::Mod* m) {
+  if (!m || !m->hasScreen()) return;
+  openMod = m;
+  screen = Screen::Mod;
+  if (m->view()) m->view()->opened();
+  needFull = true;
+}
+
+void tapMods(int, int y) {
+  dash::Mod* shown[dash::ModList::kMax];
+  int n = modList ? modList->screens(shown, dash::ModList::kMax) : 0;
+  for (int i = 0; i < n; i++) {
+    int ry = kTop + 52 + i * (kCardH + kCardGap);
+    if (y >= ry && y < ry + kCardH) {
+      modsBack = shown[i];
+      openModScreen(shown[i]);
+      return;
+    }
+  }
+}
+
+void tapHome(int, int y) {
+  for (int i = 0; i < nCards; i++) {
+    int ry = kCardY0 + i * (kCardH + kCardGap);
+    if (y < ry || y >= ry + kCardH) continue;
+    if (cards[i].open == Screen::Mod) openModScreen(cards[i].mod);
+    else show(cards[i].open);
+    return;
+  }
 }
 
 // ---------- Projects ----------
 // FAITH's family projects, read-only: a list by project, and one thread's
 // latest line. Tap a thread to open it. Pages, not scrolling, until the knob (M3).
 constexpr int kListY = kTop + 52;
-constexpr int kNavH = 48, kNavY = kBottom - kNavH - 6;
 constexpr int kHeadRowH = 28, kThreadRowH = 56;
 constexpr int kMaxRows = dash::Glance::kProjects + dash::Glance::kThreads;
 constexpr int kMaxPages = 16;
@@ -215,64 +388,10 @@ char openThread[40] = "";  // the thread being read, by id; empty: the list
 uint32_t drawnProjectsRev = UINT32_MAX;
 uint32_t drawnProjectsLinks = UINT32_MAX;
 
-// Cuts `s` to fit `maxW` pixels in `font`, ending with "..." when cut.
-void fit(char* out, size_t n, const char* s, uint8_t font, int maxW) {
-  snprintf(out, n, "%s", s);
-  if (tft.textWidth(out, font) <= maxW) return;
-  size_t len = strlen(out);
-  while (len > 0) {
-    out[--len] = 0;
-    char tmp[80];
-    snprintf(tmp, sizeof tmp, "%s...", out);
-    if (tft.textWidth(tmp, font) <= maxW) {
-      snprintf(out, n, "%s", tmp);
-      return;
-    }
-  }
-}
-
-// Draws `s` wrapped at spaces in `font`, from y, at most `lines` lines. Returns the next y.
-int wrap(const char* s, int x, int y, int maxW, uint8_t font, uint16_t fg, uint16_t bg, int lines) {
-  char line[80];
-  const char* p = s;
-  int lh = tft.fontHeight(font) + 4;
-  tft.setTextDatum(TL_DATUM);
-  tft.setTextColor(fg, bg);
-  while (*p && lines-- > 0) {
-    while (*p == ' ') p++;
-    size_t take = 0, lastSpace = 0;
-    while (p[take]) {
-      snprintf(line, sizeof line, "%.*s", (int)(take + 1), p);
-      if (tft.textWidth(line, font) > maxW) break;
-      if (p[take] == ' ') lastSpace = take;
-      take++;
-    }
-    if (p[take] && lastSpace && lines > 0) take = lastSpace;  // break at a word
-    if (p[take] && lines == 0) {                               // last line: cut with "..."
-      char cut[80];
-      fit(cut, sizeof cut, p, font, maxW);
-      tft.drawString(cut, x, y, font);
-      return y + lh;
-    }
-    snprintf(line, sizeof line, "%.*s", (int)take, p);
-    tft.drawString(line, x, y, font);
-    p += take;
-    y += lh;
-  }
-  return y;
-}
-
 uint16_t statusColour(const char* st) {
   if (dash::threadNeedsYou(st)) return BAD;
   if (!strcmp(st, "working")) return GOLD;
   return MUTED;
-}
-
-void navButton(const char* label, int x, int w, bool primary) {
-  tft.fillRoundRect(x, kNavY, w, kNavH, 8, primary ? GOLD : CARD);
-  tft.setTextDatum(MC_DATUM);
-  tft.setTextColor(primary ? BG : TEXT, primary ? GOLD : CARD);
-  tft.drawString(label, x + w / 2, kNavY + kNavH / 2, 4);
 }
 
 void layoutPages() {
@@ -438,7 +557,7 @@ void tapProjects(int x, int y) {
 
 // ---------- Device ----------
 void row(int i, const char* label, const char* value) {
-  int y = kTop + 60 + i * 34;
+  int y = kTop + 56 + i * 32;
   text(label, 16, y, 2, MUTED);
   text(value, 120, y, 2, TEXT, TL_DATUM, W - 130);
 }
@@ -447,8 +566,9 @@ void drawDevice(bool full) {
   if (full) {
     clearContent();
     heading("Device");
-    text("Hold BOOT while powering on to", 16, kBottom - 52, 2, MUTED);
-    text("calibrate the touch screen again.", 16, kBottom - 32, 2, MUTED);
+    text("Hold BOOT while powering on to", 16, kNavY - 48, 2, MUTED);
+    text("calibrate the touch screen again.", 16, kNavY - 28, 2, MUTED);
+    navButton("Back to Links", 12, W - 24, false);
   }
   char v[48];
   uint32_t mv = hw::batteryMv();
@@ -456,14 +576,16 @@ void drawDevice(bool full) {
   row(0, "Battery", v);
   row(1, "Wi-Fi", net::statusText());
   row(2, "Address", *net::ip() ? net::ip() : "none");
-  if (net::up()) snprintf(v, sizeof v, "%d dBm", net::rssi()); else snprintf(v, sizeof v, "-");
+  if (net::up()) snprintf(v, sizeof v, "%d dBm, channel %d", net::rssi(), WiFi.channel()); else snprintf(v, sizeof v, "-");
   row(3, "Signal", v);
+  snprintf(v, sizeof v, "%s", WiFi.macAddress().c_str());
+  row(4, "MAC", v);  // the bridge needs this for ESP-NOW
   snprintf(v, sizeof v, "%u KB free", (unsigned)(ESP.getFreeHeap() / 1024));
-  row(4, "Memory", v);
+  row(5, "Memory", v);
   uint32_t s = millis() / 1000;
   snprintf(v, sizeof v, "%uh %02um %02us", s / 3600, (s / 60) % 60, s % 60);
-  row(5, "Up for", v);
-  row(6, "Firmware", DASH_VERSION);
+  row(6, "Up for", v);
+  row(7, "Firmware", DASH_VERSION);
 }
 
 // ---------- Talk (placeholder) ----------
@@ -476,39 +598,67 @@ void drawTalk() {
 }
 
 void draw(bool full) {
+  uint32_t now = millis();
   switch (screen) {
     case Screen::Home: drawHome(full); break;
     case Screen::Projects: drawProjects(full); break;
     case Screen::Links: drawLinks(full); break;
     case Screen::Device: drawDevice(full); break;
+    case Screen::Mods: if (full) drawMods(); break;
+    case Screen::ModSettings: if (full) drawModSettings(); break;
     case Screen::Talk: if (full) drawTalk(); break;
+    case Screen::Files:
+    case Screen::Mod: {
+      dash::ModView* v = currentView();
+      if (!v) break;
+      if (full) clearContent();
+      if (full || v->dirty(now)) v->draw(now, full);
+      break;
+    }
     default: break;
   }
 }
 
 void onTap(int x, int y) {
   if (y >= kTabY) {
-    show((Screen)min(x / (W / kTabs), kTabs - 1));
+    if (screen == Screen::Talk) return;
+    int i = min(x / (W / nTabs), nTabs - 1);
+    if (tabs[i].screen == Screen::Mod) openModScreen(tabs[i].mod);
+    else show(tabs[i].screen);
     return;
   }
-  if (screen == Screen::Links) tapLinks(x, y);
-  if (screen == Screen::Projects) tapProjects(x, y);
-  if (screen == Screen::Home && projects && projects->enabled && y >= kHomeProjectsY && y < kHomeProjectsY + 84) show(Screen::Projects);
+  if (y < kTop) return;
+  uint32_t now = millis();
+  switch (screen) {
+    case Screen::Home: tapHome(x, y); break;
+    case Screen::Links: tapLinks(x, y); break;
+    case Screen::Projects: tapProjects(x, y); break;
+    case Screen::Device: if (y >= kNavY) show(Screen::Links); break;
+    case Screen::Mods: tapMods(x, y); break;
+    case Screen::ModSettings: tapModSettings(x, y); break;
+    case Screen::Files:
+    case Screen::Mod: {
+      dash::ModView* v = currentView();
+      if (v) {
+        v->tap(x, y, now);
+        if (v->dirty(now)) v->draw(now, false);
+      }
+      break;
+    }
+    default: break;
+  }
 }
 }  // namespace
 
-void begin(dash::Registry* l, ProjectsLink* p) {
+void begin(dash::Registry* l, ProjectsLink* p, FilesLink* f, dash::ModList* m) {
   links = l;
   projects = p;
+  files = f;
+  modList = m;
+  buildTabs();
   tft.init();
   tft.setRotation(0);  // portrait, USB at the bottom (verify on hardware)
-  BG = tft.color565(27, 26, 24);
-  CARD = tft.color565(42, 40, 35);
-  TEXT = tft.color565(239, 233, 220);
-  MUTED = tft.color565(160, 152, 138);
-  GOLD = tft.color565(201, 162, 39);
-  OK = tft.color565(95, 163, 106);
-  BAD = tft.color565(220, 110, 90);
+  initPalette();
   tft.fillScreen(BG);
 
   uint16_t cal[5];
@@ -530,6 +680,10 @@ void calibrateTouch() {
 }
 
 void show(Screen s) {
+  if (s == Screen::Mod) {
+    openModScreen(openMod);
+    return;
+  }
   if (s == screen && !needFull) {
     // Tapping Projects again goes back to its list.
     if (s == Screen::Projects && *openThread) {
@@ -543,13 +697,16 @@ void show(Screen s) {
     openThread[0] = 0;
     if (projects) projects->refreshSoon();
   }
+  if (s == Screen::Files && files) files->opened();
   screen = s;
   needFull = true;
 }
 
 void nextTab() {
-  int i = screen == Screen::Talk ? 0 : ((int)screen + 1) % kTabs;
-  show((Screen)i);
+  int i = screen == Screen::Talk ? -1 : currentTab();
+  const Tab& t = tabs[(i + 1) % nTabs];
+  if (t.screen == Screen::Mod) openModScreen(t.mod);
+  else show(t.screen);
 }
 
 Screen current() { return screen; }
@@ -588,12 +745,13 @@ void loop(uint32_t now) {
     lastTick = now;
     return;
   }
-  // Data-driven screens: Links redraws on change, the rest once a second.
+  // Links and mod screens redraw on change; the rest once a second.
   if (screen == Screen::Links) drawLinks(false);
+  if (screen == Screen::Files || screen == Screen::Mod) draw(false);
   if (now - lastTick >= 1000) {
     lastTick = now;
     drawBar(false);
-    if (screen != Screen::Links) draw(false);
+    if (screen != Screen::Links && screen != Screen::Files && screen != Screen::Mod) draw(false);
   }
 }
 

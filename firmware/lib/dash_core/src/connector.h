@@ -21,13 +21,16 @@ class Connector {
   virtual LinkState state() const = 0;
   // A short plain line: "answering", "no reply: check FAITH is running".
   virtual const char* detail() const { return ""; }
+  // Whether to count it as a link that needs a look (Home card, LED). Most
+  // links: not Up. A truck that's asleep in the drive is not a problem.
+  virtual bool problem() const { return state() != LinkState::Up; }
 
   bool enabled = true;
 };
 
 class Registry {
  public:
-  static constexpr int kMax = 6;
+  static constexpr int kMax = 10;
   bool add(Connector* c);
   int count() const { return n_; }
   Connector* at(int i) const { return (i >= 0 && i < n_) ? list_[i] : nullptr; }
@@ -35,7 +38,7 @@ class Registry {
   void loop(uint32_t nowMs, bool netUp);
   // Bumps whenever any enabled connector's state changes, so the UI knows to redraw.
   uint32_t revision() const { return rev_; }
-  // Enabled connectors that are not Up.
+  // Enabled connectors whose problem() is true.
   int problems() const;
 
  private:

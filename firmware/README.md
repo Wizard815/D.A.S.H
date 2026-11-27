@@ -26,15 +26,32 @@ pio test -e native
 
 | Path | What |
 | --- | --- |
-| `lib/dash_core/` | no Arduino code: battery curve, button debounce/long-press, retry backoff, connector interface and registry, FAITH projects glance parsing. Tested in `test/test_core`. |
+| `lib/dash_core/` | no Arduino code: battery curve, button debounce/long-press, retry backoff, connector interface and registry, FAITH projects glance parsing, the mod list and dash-mod frames (`mod.*`), Atlas frames and words (`atlas.*`), file names and the Wi-Fi join code (`share.*`). Tested in `test/test_core`. |
 | `src/main.cpp` | wires it together; the main loop |
 | `src/hw.*` | battery ADC, buttons, RGB LED, backlight PWM |
 | `src/net.*` | Wi-Fi with backoff, NTP clock |
 | `src/faith_link.*` | first connector: polls FAITH `GET /api/health` |
 | `src/projects_link.*` | FAITH's family projects: polls `GET /api/projects/glance` with `DASH_FAITH_TOKEN` |
-| `src/ui.*` | screens: Home, Projects, Links, Device, Talk placeholder |
+| `src/ui.*` | screens: Home cards, Projects, Files, a mod tab (or Mods), Links, Device, mod settings, Talk placeholder |
+| `src/gfx.*` | the screen, colours and drawing helpers shared by screens and mods |
+| `src/files_link.*` | Files: microSD card, the DASH-Share Wi-Fi, its web page and QR code |
+| `src/espnow_bus.*` | ESP-NOW receive queue shared by mods |
+| `src/mods/` | mods: `mods.cpp` lists them; `atlas_mod.*` is the truck |
 | `src/settings.*` | NVS: touch calibration, per-link on/off |
 | `include/board.h` | non-display pins; display pins are flags in `platformio.ini` |
+
+## Files and mods
+
+- **Files** tab: the SD card's files and space, **Share** (a `DASH-Share` Wi-Fi
+  and QR code) and **Uploads: on/off**. See [docs/files.md](../docs/files.md).
+- **Mods**: each shows in Links with On/Off and, if it has any, **Settings >**.
+  One mod with a screen gets a tab; more share a **Mods** tab.
+  See [docs/mods/README.md](../docs/mods/README.md).
+- **Atlas** tab: Gauges, Codes, Trip. Setup in [docs/mods/atlas.md](../docs/mods/atlas.md);
+  the ESP32-C3 bridge firmware is in [`bridge/`](../bridge).
+- **Home** is now cards: Links (only when something needs a look), mods,
+  Projects, Files. Tap a card to open it.
+- **Device** moved under Links (**Device info**), and shows the MAC the bridge needs.
 
 ## What M1 does
 
@@ -47,10 +64,10 @@ pio test -e native
   starting a thread, sending it more and saying Yes are in the FAITH app until
   hold-to-talk (M2) and pairing (M6). Refreshes every minute and when you open it.
 - **Links**: each connector with its state in words, the reason when it fails,
-  and an On/Off switch that's saved across restarts.
+  and an On/Off switch that's saved across restarts. **Device info** at the bottom.
 - **Device**: battery mV, Wi-Fi, IP, signal, free memory, uptime, version.
 - **Touch**: calibrates on first boot and saves it. Hold BOOT while powering on to redo it.
-- **BOOT key**: click = next tab (Home, Projects, Links, Device), hold = Home.
+- **BOOT key**: click = next tab (Home, Projects, Files, Atlas, Links), hold = Home.
 - **Side button A** (once wired, set `DASH_HAS_PTT_BUTTON=1`): hold shows the Talk screen.
 - **Backlight** dims after a minute idle; any touch or button wakes it.
 - **RGB LED**: green = all links up, blue = a link is not up, red = no Wi-Fi.
