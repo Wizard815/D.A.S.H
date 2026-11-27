@@ -53,9 +53,18 @@ Examples:
 
 ## Owner tools (not on these frames)
 
-Pairing, managing the Truck Share, uploads and remote start go over truckd's
-HTTP API with an owner key, from the DASH phone app's Atlas mod: see
+Pairing, status, the share mode (`POST /api/share/mode`), the share QR
+(`GET /api/share/qr`, which also returns an owner login link) and remote start
+go over truckd's HTTP API with an owner key, from the DASH phone app's Atlas
+mod: see
 [A.T.L.A.S docs/api.md](https://github.com/Wizard815/A.T.L.A.S/blob/main/docs/api.md).
+
+The Truck Share files are served by copyparty at `http://atlas.local:3923`,
+not truckd. The Atlas mod logs in with the owner account and uses copyparty's
+own HTTP API to list, download with Range, show thumbnails, upload (resumable),
+delete, move and hide files. Guests can read `/`, read and write `/drop`, and
+can't see `/private`; unpost is off. See
+[A.T.L.A.S docs/share.md](https://github.com/Wizard815/A.T.L.A.S/blob/main/docs/share.md).
 Remote start carries a nonce and expires in 30 s or less; its result comes
 back as a `cmd` frame.
 
