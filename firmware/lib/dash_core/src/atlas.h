@@ -66,7 +66,7 @@ struct AtlasGps {
   AtlasGps();
 };
 
-enum class AtlasFrame : uint8_t { Bad, Hi, Bye, Obd, Dtc, Dtx, Sync, Wx, Pwr, Gps, Other };
+enum class AtlasFrame : uint8_t { Bad, Hi, Bye, Obd, Dtc, Dtx, Sync, Wx, Pwr, Gps, Cmd, Other };
 
 struct AtlasState {
   AtlasObd obd;
@@ -83,6 +83,10 @@ struct AtlasState {
   uint32_t lastMs = 0;  // last frame of any kind
   bool asleep = false;  // said bye, nothing since
   char byeWhy[16] = "";
+  // The last owner command's result (remote start), from a cmd frame.
+  char cmdWhat[12] = "", cmdMsg[64] = "";
+  bool cmdOk = false;
+  uint32_t cmdAtMs = 0;
   uint32_t rev = 0;     // bumps on every applied frame
   uint32_t clockUnix = 0, clockAtMs = 0;  // from any frame's "ts": the truck's clock
 

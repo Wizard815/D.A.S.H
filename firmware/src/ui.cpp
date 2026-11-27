@@ -12,7 +12,6 @@
 #include "mods/mods.h"
 #include "mods/view.h"
 #include "net.h"
-#include "projects_link.h"
 #include "settings.h"
 
 #ifndef DASH_VERSION
@@ -25,12 +24,11 @@ namespace {
 using namespace gfx;
 
 dash::Registry* links = nullptr;
-ProjectsLink* projects = nullptr;
 FilesLink* files = nullptr;
 dash::ModList* modList = nullptr;
 
-// Tabs: Home, Projects, Files, then one mod by name (or "Mods" when more than
-// one has a screen), then Links. Device sits under Links. Five at most, so
+// Tabs: Home, Files, up to two mods by name (with three or more, the first
+// and a "Mods" list), then Links. Device sits under Links. Five at most, so
 // each stays over 60 px wide.
 struct Tab {
   const char* name;
@@ -50,6 +48,7 @@ dash::Mod* modsBack = nullptr;     // came from the Mods list
 bool needFull = true;
 uint32_t lastTick = 0, lastTouch = 0, activity = 0;
 bool touching = false;
+int touchX0 = 0, touchX = 0, touchY = 0;  // where the finger went down, and is now
 uint32_t drawnLinksRev = 0;
 char drawnHome[200] = "";
 char drawnBar[40] = "";
@@ -57,12 +56,12 @@ char drawnBar[40] = "";
 void buildTabs() {
   nTabs = 0;
   tabs[nTabs++] = {"Home", Screen::Home, nullptr};
-  tabs[nTabs++] = {"Projects", Screen::Projects, nullptr};
   tabs[nTabs++] = {"Files", Screen::Files, nullptr};
   dash::Mod* shown[dash::ModList::kMax];
   int n = modList ? modList->screens(shown, dash::ModList::kMax) : 0;
-  if (n == 1) tabs[nTabs++] = {shown[0]->name(), Screen::Mod, shown[0]};
-  else if (n > 1) tabs[nTabs++] = {"Mods", Screen::Mods, nullptr};
+  if (n >= 1) tabs[nTabs++] = {shown[0]->name(), Screen::Mod, shown[0]};
+  if (n == 2) tabs[nTabs++] = {shown[1]->name(), Screen::Mod, shown[1]};
+  else if (n > 2) tabs[nTabs++] = {"Mods", Screen::Mods, nullptr};
   tabs[nTabs++] = {"Links", Screen::Links, nullptr};
 }
 
@@ -70,10 +69,13 @@ void buildTabs() {
 int currentTab() {
   for (int i = 0; i < nTabs; i++) {
     if (tabs[i].screen == Screen::Mod && screen == Screen::Mod && tabs[i].mod == openMod) return i;
-    if (tabs[i].screen == Screen::Mods && (screen == Screen::Mods || screen == Screen::Mod)) return i;
+    if (tabs[i].screen == Screen::Mods && screen == Screen::Mods) return i;
     if (tabs[i].screen == screen && screen != Screen::Mod) return i;
     if (tabs[i].screen == Screen::Links && (screen == Screen::Device || screen == Screen::ModSettings)) return i;
   }
+  // A mod without its own tab, opened from the Mods list.
+  for (int i = 0; i < nTabs; i++)
+    if (tabs[i].screen == Screen::Mods && screen == Screen::Mod) return i;
   return -1;
 }
 
@@ -121,7 +123,7 @@ void drawTabs() {
 
 // ---------- Home ----------
 // Clock and date, then cards: links, projects, files, then each mod's.
-constexpr int kCardH = 64, kCardGap = 8, kCardY0 = kTop + 150;
+constexpr int kCardH = 64, kCardGap = 8, kCardY0 = kTop + 150, kQrChipW = 96;
 constexpr int kMaxCards = (kBottom - 4 - kCardY0 + kCardGap) / (kCardH + kCardGap);
 struct Card {
   dash::HomeCard c;
@@ -155,15 +157,6 @@ void collectCards(uint32_t now) {
       k.mod = m;
       nCards++;
     }
-  if (projects && projects->enabled && nCards < kMaxCards) {
-    Card& k = cards[nCards++];
-    k = Card();
-    snprintf(k.c.title, sizeof k.c.title, "Projects");
-    if (projects->hasGlance()) dash::glanceSummary(projects->glance(), k.c.line, sizeof k.c.line);
-    else snprintf(k.c.line, sizeof k.c.line, "Asking FAITH...");
-    k.c.attention = projects->hasGlance() && projects->glance().needsYou;
-    k.open = Screen::Projects;
-  }
   if (files && files->enabled && nCards < kMaxCards) {
     Card& k = cards[nCards++];
     k = Card();
@@ -200,8 +193,9 @@ void drawHome(bool full) {
     tft.fillRoundRect(12, y, W - 24, kCardH, 10, CARD);
     if (c.attention) tft.fillRect(12, y + 8, 4, kCardH - 16, GOLD);  // with words below, never alone
     textOn(c.title, 28, y + 8, 4, TEXT, CARD);
-    textOn("Open >", W - 28, y + 12, 2, MUTED, CARD, TR_DATUM);
-    fit(line, sizeof line, c.line, 2, W - 56);
+    if (cards[i].open == Screen::Files) button("QR code", W - 12 - kQrChipW - 6, y + 8, kQrChipW, 44, true);  // the quick QR button
+    else textOn("Open >", W - 28, y + 12, 2, MUTED, CARD, TR_DATUM);
+    fit(line, sizeof line, c.line, 2, W - 56 - (cards[i].open == Screen::Files ? kQrChipW : 0));
     textOn(line, 28, y + 40, 2, c.attention ? GOLD : MUTED, CARD);
   }
   if (nCards == 0) text("Nothing to show yet.", W / 2, kCardY0 + 20, 2, MUTED, TC_DATUM);
@@ -343,8 +337,16 @@ void drawMods() {
   if (n == 0) wrap("No mods are on. Turn one on in Links.", 16, kTop + 60, W - 32, 2, MUTED, BG, 2);
 }
 
+// Tells the screen being left (Files or a mod) so it can stop a video.
+void leaving() {
+  dash::ModView* v = currentView();
+  if (v) v->closed();
+}
+
 void openModScreen(dash::Mod* m) {
   if (!m || !m->hasScreen()) return;
+  if (!(screen == Screen::Mod && openMod == m)) leaving();
+  // Tapping its tab again starts it over (e.g. back to the project list).
   openMod = m;
   screen = Screen::Mod;
   if (m->view()) m->view()->opened();
@@ -364,193 +366,15 @@ void tapMods(int, int y) {
   }
 }
 
-void tapHome(int, int y) {
+void tapHome(int x, int y) {
   for (int i = 0; i < nCards; i++) {
     int ry = kCardY0 + i * (kCardH + kCardGap);
     if (y < ry || y >= ry + kCardH) continue;
     if (cards[i].open == Screen::Mod) openModScreen(cards[i].mod);
-    else show(cards[i].open);
-    return;
-  }
-}
-
-// ---------- Projects ----------
-// FAITH's family projects, read-only: a list by project, and one thread's
-// latest line. Tap a thread to open it. Pages, not scrolling, until the knob (M3).
-constexpr int kListY = kTop + 52;
-constexpr int kHeadRowH = 28, kThreadRowH = 56;
-constexpr int kMaxRows = dash::Glance::kProjects + dash::Glance::kThreads;
-constexpr int kMaxPages = 16;
-dash::GlanceRow rows[kMaxRows];
-int nRows = 0, nPages = 1, page = 0;
-int pageStart[kMaxPages + 1] = {0};
-char openThread[40] = "";  // the thread being read, by id; empty: the list
-uint32_t drawnProjectsRev = UINT32_MAX;
-uint32_t drawnProjectsLinks = UINT32_MAX;
-
-uint16_t statusColour(const char* st) {
-  if (dash::threadNeedsYou(st)) return BAD;
-  if (!strcmp(st, "working")) return GOLD;
-  return MUTED;
-}
-
-void layoutPages() {
-  nRows = dash::glanceRows(projects->glance(), rows, kMaxRows);
-  nPages = 0;
-  int y = kListY, bottom = kNavY - 6;
-  for (int i = 0; i < nRows; i++) {
-    int h = rows[i].heading ? kHeadRowH : kThreadRowH;
-    // Keep a heading with its first thread.
-    int need = h + (rows[i].heading && i + 1 < nRows && !rows[i + 1].heading ? kThreadRowH : 0);
-    if (i == 0 || y + need > bottom) {
-      if (nPages >= kMaxPages) { nRows = i; break; }
-      pageStart[nPages++] = i;
-      y = kListY;
-    }
-    y += h;
-  }
-  if (nPages == 0) pageStart[nPages++] = 0;
-  pageStart[nPages] = nRows;
-  if (page >= nPages) page = nPages - 1;
-}
-
-// Where a row of the current page is drawn, or -1 past the page.
-int rowY(int i) {
-  int y = kListY;
-  for (int k = pageStart[page]; k < pageStart[page + 1]; k++) {
-    if (k == i) return y;
-    y += rows[k].heading ? kHeadRowH : kThreadRowH;
-  }
-  return -1;
-}
-
-int findThread(const char* id) {
-  const dash::Glance& g = projects->glance();
-  for (int i = 0; i < g.nThreads; i++)
-    if (!strcmp(g.threads[i].id, id)) return i;
-  return -1;
-}
-
-void drawProjectsMessage(const char* a, const char* b) {
-  text(a, 16, kListY + 8, 4, TEXT);
-  wrap(b, 16, kListY + 48, W - 32, 2, MUTED, BG, 4);
-}
-
-void drawThread(int ti) {
-  const dash::Glance& g = projects->glance();
-  const dash::GlanceThread& t = g.threads[ti];
-  char buf[64];
-  text(g.projects[t.project].name, 16, kTop + 16, 2, MUTED);
-  int y = wrap(t.title, 16, kTop + 38, W - 32, 4, TEXT, BG, 2) + 6;
-  // Status as a badge with words.
-  const char* words = dash::threadStatusText(t.status);
-  int bw = tft.textWidth(words, 2) + 20;
-  tft.fillRoundRect(16, y, bw, 26, 13, CARD);
-  tft.setTextDatum(ML_DATUM);
-  tft.setTextColor(statusColour(t.status), CARD);
-  tft.drawString(words, 26, y + 13, 2);
-  y += 42;
-  if (*t.last) {
-    text("Latest", 16, y, 2, MUTED);
-    y = wrap(t.last, 16, y + 22, W - 32, 4, TEXT, BG, 4) + 12;
-  }
-  snprintf(buf, sizeof buf, "%s", dash::threadNeedsYou(t.status) ? "Answer it in the FAITH app or a chat." : "Read it all or send it more in the FAITH app.");
-  wrap(buf, 16, y, W - 32, 2, MUTED, BG, 2);
-  navButton("Back", 12, W - 24, false);
-}
-
-void drawProjects(bool full) {
-  uint32_t rev = projects ? projects->revision() : 0;
-  uint32_t lrev = links ? links->revision() : 0;
-  if (!full && rev == drawnProjectsRev && lrev == drawnProjectsLinks) return;
-  drawnProjectsRev = rev;
-  drawnProjectsLinks = lrev;
-  clearContent();
-
-  if (!projects || !projects->enabled) {
-    heading("Projects");
-    drawProjectsMessage("Projects are off", "Add DASH_FAITH_TOKEN to secrets.h (see the firmware README), or turn Projects on in Links.");
-    return;
-  }
-  if (!projects->hasGlance()) {
-    heading("Projects");
-    const char* d = projects->detail();
-    drawProjectsMessage("Asking FAITH...", projects->state() == dash::LinkState::Error && *d ? d : "Your projects show here in a moment.");
-    return;
-  }
-  layoutPages();
-  if (*openThread) {
-    int ti = findThread(openThread);
-    if (ti >= 0) {
-      drawThread(ti);
-      return;
-    }
-    openThread[0] = 0;  // put away or gone: back to the list
-  }
-
-  heading("Projects");
-  const dash::Glance& g = projects->glance();
-  char sum[40];
-  dash::glanceSummary(g, sum, sizeof sum);
-  text(sum, W - 16, kTop + 20, 2, g.needsYou ? GOLD : MUTED, TR_DATUM);
-  if (nRows == 0) {
-    drawProjectsMessage("No projects", "FAITH shows no projects for this token.");
-    return;
-  }
-  char line[80];
-  for (int k = pageStart[page]; k < pageStart[page + 1]; k++) {
-    int y = rowY(k);
-    if (rows[k].heading) {
-      const dash::GlanceProject& p = g.projects[rows[k].index];
-      text(p.name, 16, y + 8, 2, MUTED);
-      if (p.count == 0) text("No threads yet", W - 16, y + 8, 2, MUTED, TR_DATUM);
-      continue;
-    }
-    const dash::GlanceThread& t = g.threads[rows[k].index];
-    tft.fillRoundRect(12, y, W - 24, kThreadRowH - 6, 8, CARD);
-    tft.setTextDatum(TL_DATUM);
-    tft.setTextColor(TEXT, CARD);
-    fit(line, sizeof line, t.title, 2, W - 56);
-    tft.drawString(line, 24, y + 7, 2);
-    tft.setTextColor(TEXT, CARD);
-    tft.drawString(">", W - 32, y + 7, 2);
-    const char* words = dash::threadStatusText(t.status);
-    tft.setTextColor(statusColour(t.status), CARD);
-    tft.drawString(words, 24, y + 27, 2);
-    int x = 24 + tft.textWidth(words, 2) + 10;
-    if (*t.last && strcmp(t.last, words)) {
-      fit(line, sizeof line, t.last, 2, W - 24 - x - 12);
-      tft.setTextColor(MUTED, CARD);
-      tft.drawString(line, x, y + 27, 2);
-    }
-  }
-  if (nPages > 1) {
-    char more[32];
-    snprintf(more, sizeof more, "Page %d of %d", page + 1, nPages);
-    text(more, 16, kNavY + 16, 2, MUTED);
-    navButton(page + 1 < nPages ? "Next" : "First", W - 12 - 128, 128, true);
-  }
-}
-
-void tapProjects(int x, int y) {
-  if (!projects || !projects->hasGlance()) return;
-  if (*openThread) {
-    if (y >= kNavY) {
-      openThread[0] = 0;
-      drawProjects(true);
-    }
-    return;
-  }
-  if (nPages > 1 && y >= kNavY && x >= W - 12 - 128 - 12) {
-    page = (page + 1) % nPages;
-    drawProjects(true);
-    return;
-  }
-  for (int k = pageStart[page]; k < pageStart[page + 1]; k++) {
-    int ry = rowY(k);
-    if (rows[k].heading || y < ry || y >= ry + kThreadRowH - 6) continue;
-    snprintf(openThread, sizeof openThread, "%s", projects->glance().threads[rows[k].index].id);
-    drawProjects(true);
+    else if (cards[i].open == Screen::Files && x >= W - 12 - kQrChipW - 12 && files) {
+      show(Screen::Files);
+      files->showQr();  // straight to the code, sharing turned on
+    } else show(cards[i].open);
     return;
   }
 }
@@ -601,7 +425,6 @@ void draw(bool full) {
   uint32_t now = millis();
   switch (screen) {
     case Screen::Home: drawHome(full); break;
-    case Screen::Projects: drawProjects(full); break;
     case Screen::Links: drawLinks(full); break;
     case Screen::Device: drawDevice(full); break;
     case Screen::Mods: if (full) drawMods(); break;
@@ -632,7 +455,6 @@ void onTap(int x, int y) {
   switch (screen) {
     case Screen::Home: tapHome(x, y); break;
     case Screen::Links: tapLinks(x, y); break;
-    case Screen::Projects: tapProjects(x, y); break;
     case Screen::Device: if (y >= kNavY) show(Screen::Links); break;
     case Screen::Mods: tapMods(x, y); break;
     case Screen::ModSettings: tapModSettings(x, y); break;
@@ -650,9 +472,8 @@ void onTap(int x, int y) {
 }
 }  // namespace
 
-void begin(dash::Registry* l, ProjectsLink* p, FilesLink* f, dash::ModList* m) {
+void begin(dash::Registry* l, FilesLink* f, dash::ModList* m) {
   links = l;
-  projects = p;
   files = f;
   modList = m;
   buildTabs();
@@ -684,18 +505,15 @@ void show(Screen s) {
     openModScreen(openMod);
     return;
   }
+  if (s != screen) leaving();
   if (s == screen && !needFull) {
-    // Tapping Projects again goes back to its list.
-    if (s == Screen::Projects && *openThread) {
-      openThread[0] = 0;
+    // Tapping Files again goes back to its main view.
+    if (s == Screen::Files && files) {
+      files->closed();
+      files->opened();
       needFull = true;
     }
     return;
-  }
-  if (s == Screen::Projects) {
-    page = 0;
-    openThread[0] = 0;
-    if (projects) projects->refreshSoon();
   }
   if (s == Screen::Files && files) files->opened();
   screen = s;
@@ -731,7 +549,20 @@ void loop(uint32_t now) {
     bool down = tft.getTouch(&x, &y);
     if (down && !touching) {
       noteActivity(now);
+      touchX0 = x;
       onTap(x, y);
+    }
+    if (down) {
+      touchX = x;
+      touchY = y;
+    }
+    if (!down && touching) {
+      // Lifted: views get it too, for swipes.
+      dash::ModView* v = currentView();
+      if (v && touchY >= kTop && touchY < kBottom) {
+        v->release(touchX, touchY, touchX - touchX0, now);
+        if (v->dirty(now)) v->draw(now, false);
+      }
     }
     touching = down;
   }

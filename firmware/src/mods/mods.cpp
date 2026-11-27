@@ -3,6 +3,12 @@
 #include "espnow_bus.h"
 #include "settings.h"
 
+#ifndef DASH_MOD_FAITH
+#define DASH_MOD_FAITH 1
+#endif
+#if DASH_MOD_FAITH
+#include "faith_mod.h"
+#endif
 #ifndef DASH_MOD_ATLAS
 #define DASH_MOD_ATLAS 1
 #endif
@@ -13,6 +19,9 @@
 namespace mods {
 
 namespace {
+#if DASH_MOD_FAITH
+FaithMod faith;
+#endif
 #if DASH_MOD_ATLAS
 AtlasMod atlas;
 #endif
@@ -29,10 +38,14 @@ void add(dash::ModList& list, dash::Registry& links, dash::Mod* m) {
 }  // namespace
 
 void addAll(dash::ModList& list, dash::Registry& links) {
+#if DASH_MOD_FAITH
+  add(list, links, &faith);
+#endif
 #if DASH_MOD_ATLAS
   add(list, links, &atlas);
 #endif
   // Next: Home Assistant, Overseer, Argos (docs/mods/README.md).
+  // Three or more with a screen share a "Mods" tab.
 }
 
 void settingChanged(dash::Mod* m, int i) {

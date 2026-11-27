@@ -408,6 +408,9 @@ void test_atlas_sync_weather_power_gps() {
   feed(s, "{\"t\":\"gps\",\"lat\":44.97,\"lon\":-93.26,\"kph\":10,\"hdg\":270}", 0);
   TEST_ASSERT_TRUE(s.gps.have);
   TEST_ASSERT_TRUE(fabs(s.gps.lon + 93.26) < 1e-4);
+  TEST_ASSERT_EQUAL((int)AtlasFrame::Cmd, (int)feed(s, "{\"t\":\"cmd\",\"id\":\"n1\",\"what\":\"start\",\"ok\":1,\"msg\":\"Engine started\"}", 5));
+  TEST_ASSERT_TRUE(s.cmdOk);
+  TEST_ASSERT_EQUAL_STRING("Engine started", s.cmdMsg);
   AtlasState t;
   feed(t, "{\"t\":\"gps\"}", 0);  // no position: nothing kept
   TEST_ASSERT_FALSE(t.gps.have);
@@ -513,6 +516,33 @@ void test_share_password() {
   for (int i = 0; i < 10; i++) TEST_ASSERT_NULL(strchr("0O1lIio", p[i]));
 }
 
+void test_media_kind() {
+  TEST_ASSERT_EQUAL((int)Media::Photo, (int)mediaKind("IMG_2041.JPG"));
+  TEST_ASSERT_EQUAL((int)Media::Photo, (int)mediaKind("a.jpeg"));
+  TEST_ASSERT_EQUAL((int)Media::Video, (int)mediaKind("trip.mjpeg"));
+  TEST_ASSERT_EQUAL((int)Media::OtherVideo, (int)mediaKind("clip.MP4"));
+  TEST_ASSERT_EQUAL((int)Media::None, (int)mediaKind("notes.txt"));
+  TEST_ASSERT_EQUAL((int)Media::None, (int)mediaKind("noext"));
+  TEST_ASSERT_EQUAL((int)Media::None, (int)mediaKind(nullptr));
+}
+void test_jpeg_scale() {
+  TEST_ASSERT_EQUAL(1, jpegScale(320, 240, 320, 392));
+  TEST_ASSERT_EQUAL(2, jpegScale(640, 480, 320, 392));
+  TEST_ASSERT_EQUAL(8, jpegScale(4032, 3024, 320, 392));   // phone photo
+  TEST_ASSERT_EQUAL(8, jpegScale(12000, 9000, 320, 392));  // too big: smallest we have
+}
+void test_mjpeg_frames() {
+  const uint8_t s[] = {0x00, 0xFF, 0xD8, 1, 2, 0xFF, 0x00, 0xFF, 0xD9, 0xFF, 0xD8, 3, 0xFF};
+  size_t a, b;
+  TEST_ASSERT_TRUE(mjpegFrame(s, sizeof s, &a, &b));
+  TEST_ASSERT_EQUAL(1, (int)a);
+  TEST_ASSERT_EQUAL(9, (int)b);
+  // The second frame isn't finished: read more, keeping it from its start.
+  TEST_ASSERT_FALSE(mjpegFrame(s + b, sizeof s - b, &a, &b));
+  TEST_ASSERT_EQUAL(0, (int)a);
+  const uint8_t junk[] = {1, 2, 3};
+  TEST_ASSERT_FALSE(mjpegFrame(junk, sizeof junk, &a, &b));
+}
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_battery_ends);
@@ -553,5 +583,8 @@ int main() {
   RUN_TEST(test_fmt_bytes);
   RUN_TEST(test_wifi_join_code);
   RUN_TEST(test_share_password);
+  RUN_TEST(test_media_kind);
+  RUN_TEST(test_jpeg_scale);
+  RUN_TEST(test_mjpeg_frames);
   return UNITY_END();
 }

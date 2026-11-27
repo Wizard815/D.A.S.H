@@ -1,8 +1,11 @@
 # Mods
 
 A mod is an integration for another app or device: its own screen, data
-source, settings and Home card. The first is **Atlas**, the truck homelab
+source, settings and Home card. There are two so far: **FAITH** (its health
+check and the family's projects) and **Atlas**, the truck homelab
 ([atlas.md](atlas.md)). Home Assistant, Overseer and Argos fit the same shape.
+The DASH phone app (planned) carries the same mods, so there is one app for
+DASH and its mods; FAITH stays its own server and family app.
 
 Mods are compiled in, because an ESP32 can't load code at run time. Each has
 a build flag (`DASH_MOD_<NAME>=1` in `platformio.ini`) and an On/Off switch in
@@ -15,7 +18,7 @@ a build flag (`DASH_MOD_<NAME>=1` in `platformio.ini`) and an On/Off switch in
 | A row in Links | it's a link (`dash::Connector`): name, state in words, On/Off |
 | Settings | a list of `dash::ModSetting` choices; tap its row in Links. Saved per mod. |
 | A screen | `dash::ModView`: `draw`, `tap`, `dirty`, `opened`, drawn with `src/gfx.h` |
-| A tab | one mod with a screen gets its own tab; two or more share a **Mods** tab |
+| A tab | up to two mods with a screen get their own tabs; with three or more the rest share a **Mods** tab |
 | A Home card | `homeCard()`: a title and one line, with "needs a look" said in words |
 | Frames | `onFrame()` gets every dash-mod frame whose `"m"` is its id, from ESP-NOW, MQTT or anything else |
 

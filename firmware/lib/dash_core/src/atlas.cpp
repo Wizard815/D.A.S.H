@@ -106,6 +106,12 @@ AtlasFrame AtlasState::apply(const char* json, size_t len, uint32_t now) {
     pwr.soc = num(doc["soc"]);
     pwr.atMs = now;
     pwr.have = true;
+  } else if (!strcmp(t, "cmd")) {
+    f = AtlasFrame::Cmd;
+    copy(cmdWhat, sizeof cmdWhat, doc["what"]);
+    copy(cmdMsg, sizeof cmdMsg, doc["msg"]);
+    cmdOk = (doc["ok"] | 0) != 0;
+    cmdAtMs = now;
   } else if (!strcmp(t, "gps")) {
     f = AtlasFrame::Gps;
     JsonVariantConst la = doc["lat"], lo = doc["lon"];

@@ -25,4 +25,21 @@ void wifiJoinCode(const char* ssid, const char* pass, char* buf, size_t n);
 // to read out (no 0/O or 1/l/I).
 void sharePassword(const uint8_t* random10, char* out, size_t n);
 
+// What DASH can show for a file, by its name.
+enum class Media : uint8_t {
+  None,        // not a picture or video
+  Photo,       // .jpg / .jpeg: shown on the screen
+  Video,       // .mjpeg / .mjpg: played on the screen (no sound)
+  OtherVideo,  // .mp4, .mov, ...: shared, but too heavy for this chip to play
+};
+Media mediaKind(const char* name);
+
+// The smallest JPEG scale (1, 2, 4 or 8) that fits w x h inside maxW x maxH.
+uint8_t jpegScale(uint16_t w, uint16_t h, int maxW, int maxH);
+
+// Finds one whole JPEG frame (FF D8 ... FF D9) in an MJPEG stream buffer.
+// Returns true with [start, end) when one is complete; `end` is where the
+// next search starts. False: read more (keep the bytes from `start` on).
+bool mjpegFrame(const uint8_t* buf, size_t len, size_t* start, size_t* end);
+
 }  // namespace dash

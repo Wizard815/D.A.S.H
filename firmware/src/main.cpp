@@ -1,25 +1,21 @@
 // D.A.S.H firmware: screen, touch, Wi-Fi, battery, buttons, the links
-// registry (FAITH health, FAITH projects), Files on the microSD card with a
-// Wi-Fi share, and mods (Atlas, the truck homelab).
+// registry, Files on the microSD card with a Wi-Fi share, and mods (FAITH
+// with the family's projects; Atlas, the truck homelab).
 #include <Arduino.h>
 
 #include "config.h"
 #include "connector.h"
-#include "faith_link.h"
 #include "files_link.h"
 #include "hw.h"
 #include "mod.h"
 #include "mods/mods.h"
 #include "net.h"
-#include "projects_link.h"
 #include "settings.h"
 #include "ui.h"
 
 namespace {
 dash::Registry links;
 dash::ModList modList;
-FaithLink faith(DASH_FAITH_URL);
-ProjectsLink projects(DASH_FAITH_URL, DASH_FAITH_TOKEN);
 FilesLink files;
 
 constexpr uint32_t kDimAfterMs = 60000;
@@ -43,15 +39,11 @@ void setup() {
   settings::begin();
   hw::sampleBattery();
 
-  faith.enabled = settings::linkEnabled(faith.name(), true);
-  links.add(&faith);
-  projects.enabled = settings::linkEnabled(projects.name(), true);
-  links.add(&projects);
   files.enabled = settings::linkEnabled(files.name(), true);
   links.add(&files);
   mods::addAll(modList, links);
 
-  ui::begin(&links, &projects, &files, &modList);  // may run touch calibration first
+  ui::begin(&links, &files, &modList);  // may run touch calibration first
   net::begin();
   links.begin();
   ui::noteActivity(millis());

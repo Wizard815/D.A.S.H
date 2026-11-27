@@ -25,6 +25,7 @@ JSON object, at most 240 bytes, `"m":"atlas"`, metric, missing means unknown.
 | `wx` | `c`, `rh` %, `hpa`, `txt`, `hi`, `lo` | every few minutes |
 | `pwr` | `v`, `soc` % of the Pi's own battery | every minute |
 | `gps` | `lat`, `lon`, `kph`, `hdg` | every 5 s while moving |
+| `cmd` | `id` (the request's nonce), `what` (e.g. "start"), `ok` 0/1, `msg` plain words | after an owner command (remote start) sent over truckd's HTTP API, so every screen sees it happened |
 
 Examples:
 
@@ -50,8 +51,16 @@ Examples:
 | `need` | `sync` 1 or 0: whether data is waiting. The bridge also reads every `sync` frame it relays. |
 | `hi` | the bridge says its MAC when it starts |
 
+## Owner tools (not on these frames)
+
+Pairing, managing the Truck Share, uploads and remote start go over truckd's
+HTTP API with an owner key, from the DASH phone app's Atlas mod: see
+[A.T.L.A.S docs/api.md](https://github.com/Wizard815/A.T.L.A.S/blob/main/docs/api.md).
+Remote start carries a nonce and expires in 30 s or less; its result comes
+back as a `cmd` frame.
+
 ## Rules
 
-- Read-only for now. Anything that acts on the truck (remote start) needs a
-  confirm on DASH and its own message type first.
+- DASH itself is read-only. Commands go over HTTP with the owner key, never
+  as frames, so a spoofed ESP-NOW frame can't start the truck.
 - Over 240 bytes: the bridge drops it; MQTT still delivers it.

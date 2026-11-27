@@ -154,8 +154,14 @@ bool AtlasMod::dirty(uint32_t now) {
 void AtlasMod::drawHeader(uint32_t now) {
   tft.fillRect(0, kTop, W, 48, BG);
   heading("Atlas");
-  char w[40];
+  char w[72];
   bool live = dash::atlasLive(st_, now);
+  // A remote start (or other owner command) in the last 2 minutes says so here.
+  if (st_.cmdAtMs && now - st_.cmdAtMs < 120000) {
+    snprintf(w, sizeof w, "%s", st_.cmdMsg[0] ? st_.cmdMsg : st_.cmdOk ? "Command done" : "Command failed");
+    text(w, W - 16, kTop + 20, 2, st_.cmdOk ? GOOD : BAD, TR_DATUM);
+    return;
+  }
   if (live) snprintf(w, sizeof w, "Live, %s%s", dash::viaText(lastVia_), st_.ign ? ", running" : "");
   else dash::atlasLinkWords(st_, now, w, sizeof w);
   text(w, W - 16, kTop + 20, 2, live ? GOOD : st_.asleep ? MUTED : GOLD, TR_DATUM);

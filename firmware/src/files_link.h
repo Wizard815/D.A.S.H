@@ -2,6 +2,7 @@
 // download and upload files from a browser. Built in, not a mod.
 // Guests can't delete or overwrite anything. See docs/files.md.
 #pragma once
+#include <FS.h>
 #include <stdint.h>
 
 #include "connector.h"
@@ -24,6 +25,8 @@ class FilesLink : public dash::Connector, public dash::ModView {
   bool dirty(uint32_t nowMs) override;
   void draw(uint32_t nowMs, bool full) override;
   void tap(int x, int y, uint32_t nowMs) override;
+  void release(int x, int y, int dx, uint32_t nowMs) override;
+  void closed() override;
 
   bool sharing() const { return sharing_; }
   bool startShare();
@@ -31,12 +34,41 @@ class FilesLink : public dash::Connector, public dash::ModView {
   bool uploadsOn() const { return uploads_; }
   void noteGuest();  // a guest did something: keeps the share from timing out
   void changed();    // a file was added
+  void uploaded(const char* name);  // a guest uploaded this file
+  // The quick QR button: starts sharing if needed and shows the big code.
+  void showQr();
 
  private:
+  enum class Mode : uint8_t { Main, Qr, Viewer };
   bool mount();
-  void scan();  // counts files and space; slow on big cards, so only on change
+  void scan();  // counts files, space and pictures; slow on big cards, so only on change
   void drawQr(const char* text, int x, int y, int maxPx);
   void updateDetail();
+  void drawMain();
+  void drawQrScreen();
+  void drawViewer();
+  void openViewer(int index);
+  void step(int dir);
+  void play();
+  void stopVideo();
+  void videoFrame(uint32_t now);
+  int mediaIndex(const char* name) const;
+
+  Mode mode_ = Mode::Main;
+  static constexpr int kMaxMedia = 120;
+  char media_[kMaxMedia][48];
+  uint16_t nMedia_ = 0, at_ = 0;
+  // The last upload, shown until Files is opened.
+  char lastUpload_[64] = "";
+  uint32_t lastUploadMs_ = 0;
+  bool unseen_ = false;
+  // Video
+  fs::File video_;
+  uint8_t* vbuf_ = nullptr;
+  size_t vlen_ = 0;
+  bool playing_ = false;
+  uint32_t nextFrame_ = 0, frames_ = 0;
+  char videoNote_[48] = "";
 
   bool mounted_ = false, sharing_ = false, showLink_ = false, uploads_ = true;
   uint16_t files_ = 0;

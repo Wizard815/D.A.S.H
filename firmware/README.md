@@ -30,22 +30,27 @@ pio test -e native
 | `src/main.cpp` | wires it together; the main loop |
 | `src/hw.*` | battery ADC, buttons, RGB LED, backlight PWM |
 | `src/net.*` | Wi-Fi with backoff, NTP clock |
-| `src/faith_link.*` | first connector: polls FAITH `GET /api/health` |
-| `src/projects_link.*` | FAITH's family projects: polls `GET /api/projects/glance` with `DASH_FAITH_TOKEN` |
-| `src/ui.*` | screens: Home cards, Projects, Files, a mod tab (or Mods), Links, Device, mod settings, Talk placeholder |
+| `src/faith_link.*` | FAITH `GET /api/health`, used by the FAITH mod |
+| `src/projects_link.*` | FAITH's family projects: polls `GET /api/projects/glance` with `DASH_FAITH_TOKEN`, used by the FAITH mod |
+| `src/ui.*` | screens: Home cards, Files, mod tabs (or Mods), Links, Device, mod settings, Talk placeholder |
 | `src/gfx.*` | the screen, colours and drawing helpers shared by screens and mods |
 | `src/files_link.*` | Files: microSD card, the DASH-Share Wi-Fi, its web page and QR code |
 | `src/espnow_bus.*` | ESP-NOW receive queue shared by mods |
-| `src/mods/` | mods: `mods.cpp` lists them; `atlas_mod.*` is the truck |
+| `src/mods/` | mods: `mods.cpp` lists them; `faith_mod.*` is FAITH and its projects; `atlas_mod.*` is the truck |
 | `src/settings.*` | NVS: touch calibration, per-link on/off |
 | `include/board.h` | non-display pins; display pins are flags in `platformio.ini` |
 
 ## Files and mods
 
-- **Files** tab: the SD card's files and space, **Share** (a `DASH-Share` Wi-Fi
-  and QR code) and **Uploads: on/off**. See [docs/files.md](../docs/files.md).
+- **Files** tab: the SD card's files and space, Shared / Not shared in words,
+  **Share**, **QR code** (also a button on the Home card), **View** (photos and
+  MJPEG videos, swipe to move) and **Uploads: on/off**; the newest upload shows
+  until you look. See [docs/files.md](../docs/files.md).
 - **Mods**: each shows in Links with On/Off and, if it has any, **Settings >**.
-  One mod with a screen gets a tab; more share a **Mods** tab.
+  Up to two mods with a screen get their own tabs; with three or more, the
+  first keeps its tab and the rest are in a **Mods** tab.
+- **FAITH** is now a mod: its health check and the Projects screen (below)
+  live in `src/mods/faith_mod.*`, on the FAITH tab.
   See [docs/mods/README.md](../docs/mods/README.md).
 - **Atlas** tab: Gauges, Codes, Trip. Setup in [docs/mods/atlas.md](../docs/mods/atlas.md);
   the ESP32-C3 bridge firmware is in [`bridge/`](../bridge).
@@ -56,8 +61,8 @@ pio test -e native
 ## What M1 does
 
 - **Status bar**: Wi-Fi in words ("Wi-Fi good", "No Wi-Fi") and battery % or "USB power".
-- **Home**: clock and date (NTP), a links summary, and a Projects card ("1 needs you, 2 working"; tap it). Without a FAITH token, a placeholder for Orb's next task.
-- **Projects**: FAITH's family projects ([FAITH docs/projects.md](https://github.com/Wizard815/F.A.I.T.H/blob/main/docs/projects.md)).
+- **Home**: clock and date (NTP), then cards (Links when something needs a look, Atlas, Projects, Files).
+- **Projects** (the FAITH tab): FAITH's family projects ([FAITH docs/projects.md](https://github.com/Wizard815/F.A.I.T.H/blob/main/docs/projects.md)).
   Each project (yours, Family, Parents) with its threads, each thread's state in words
   (Working, Done, Waiting for approval, Didn't work) and its latest line. Tap a thread for
   the whole latest line. Next/First pages through a long list. Read-only for now:
@@ -67,7 +72,7 @@ pio test -e native
   and an On/Off switch that's saved across restarts. **Device info** at the bottom.
 - **Device**: battery mV, Wi-Fi, IP, signal, free memory, uptime, version.
 - **Touch**: calibrates on first boot and saves it. Hold BOOT while powering on to redo it.
-- **BOOT key**: click = next tab (Home, Projects, Files, Atlas, Links), hold = Home.
+- **BOOT key**: click = next tab (Home, Files, FAITH, Atlas, Links), hold = Home.
 - **Side button A** (once wired, set `DASH_HAS_PTT_BUTTON=1`): hold shows the Talk screen.
 - **Backlight** dims after a minute idle; any touch or button wakes it.
 - **RGB LED**: green = all links up, blue = a link is not up, red = no Wi-Fi.
@@ -94,7 +99,7 @@ Parents if you're a grown-up. Nobody else's. Remove it with `faith token revoke 
 if the device is lost.
 
 **What goes wrong:**
-- "Projects are off": no token in `secrets.h`, or Projects is Off in Links.
+- "Projects are off": no token in `secrets.h`, or FAITH is Off in Links.
 - "token refused: make a new one": the token was revoked or mistyped.
 - "FAITH has no projects: update it": FAITH is older than its projects feature.
 

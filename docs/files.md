@@ -3,6 +3,32 @@
 DASH keeps files on its microSD card and can share them over its own Wi-Fi.
 It's built in: a **Files** tab, a Home card and a row in Links.
 
+## On DASH
+
+- **Shared / Not shared** shows top right on Files, and the status bar says
+  "sharing". While shared, everyone on DASH-Share can see every file in `/share`.
+- **QR code**: one tap from Files or from the Home card's QR button. It turns
+  sharing on if it was off and shows a big join code; **Page link** switches
+  to the page's code.
+- **New upload**: when a guest uploads, the Home card says "New upload: name"
+  and Files shows it; tap it to view it.
+- **View**: photos and videos one at a time. Swipe, or tap the left or right
+  side, to move. Tap the middle of a video to play or pause.
+  - Photos: baseline JPEG, scaled to fit. Progressive JPEGs can't be decoded
+    here (DASH says so); PNG isn't supported on the device.
+  - Video: **MJPEG** only, no sound, about 10 to 12 frames a second. This chip
+    can't decode MP4. Convert on a computer:
+    `ffmpeg -i clip.mp4 -vf "scale=320:-2,fps=12" -q:v 7 -an clip.mjpeg`
+  - MP4 and other videos are still shared and play fine on a phone (below).
+
+## On a phone
+
+The phone does the decoding, so MP4, MOV and full-size photos play normally.
+Tap a file name to open or play it in the browser; **Save** downloads it.
+DASH answers Range requests, so a phone can seek in a video and start it
+before it has loaded. The DASH phone app (planned) uses the same `/list` and
+`/f?n=<name>` routes.
+
 ## Use it
 
 1. Put in a FAT32 microSD card. Files live in `/share` on the card.
@@ -21,8 +47,9 @@ Sharing stops after 30 minutes with no one connected.
 
 - About 0.5 MB/s and up to 4 people at once: fine for photos, PDFs and music,
   slow for video.
-- A download holds the screen until it finishes (links move to their own task
-  in roadmap M2).
+- A download or a video stream holds the screen while it sends (links move to
+  their own task in roadmap M2).
+- The viewer lists up to 120 photos and videos.
 - The share Wi-Fi uses the same channel as the network DASH is on.
 
 ## What goes wrong

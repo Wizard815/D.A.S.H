@@ -106,4 +106,38 @@ void sharePassword(const uint8_t* r, char* out, size_t n) {
   if (n) out[len] = 0;
 }
 
+Media mediaKind(const char* name) {
+  const char* dot = name ? strrchr(name, '.') : nullptr;
+  if (!dot) return Media::None;
+  char ext[8];
+  size_t n = 0;
+  for (const char* p = dot + 1; *p && n + 1 < sizeof ext; p++) ext[n++] = (*p >= 'A' && *p <= 'Z') ? *p + 32 : *p;
+  ext[n] = 0;
+  if (!strcmp(ext, "jpg") || !strcmp(ext, "jpeg")) return Media::Photo;
+  if (!strcmp(ext, "mjpeg") || !strcmp(ext, "mjpg")) return Media::Video;
+  const char* other[] = {"mp4", "mov", "m4v", "avi", "mkv", "webm", "3gp"};
+  for (const char* o : other)
+    if (!strcmp(ext, o)) return Media::OtherVideo;
+  return Media::None;
+}
+
+uint8_t jpegScale(uint16_t w, uint16_t h, int maxW, int maxH) {
+  for (uint8_t s = 1; s <= 8; s *= 2)
+    if (w / s <= maxW && h / s <= maxH) return s;
+  return 8;
+}
+
+bool mjpegFrame(const uint8_t* b, size_t len, size_t* start, size_t* end) {
+  size_t i = 0;
+  while (i + 1 < len && !(b[i] == 0xFF && b[i + 1] == 0xD8)) i++;
+  *start = i;
+  if (i + 1 >= len) return false;
+  for (size_t j = i + 2; j + 1 < len; j++)
+    if (b[j] == 0xFF && b[j + 1] == 0xD9) {
+      *end = j + 2;
+      return true;
+    }
+  return false;
+}
+
 }  // namespace dash
