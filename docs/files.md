@@ -29,7 +29,7 @@ It's built in: a **Files** tab, a Home card and a row in Links.
 ## On a phone
 
 The phone does the decoding, so MP4, MOV and full-size photos play normally.
-Tap a photo or video to open the viewer, then swipe (or use the arrows) to go
+Tap a photo or video to open the viewer, then swipe left or right to go
 to the next one without going back to the list. **Save** downloads a file.
 Guests see and play everything too; only the owner page can delete.
 DASH sends about 0.5 MB/s shared by everyone: one person can stream a 720p

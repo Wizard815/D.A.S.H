@@ -47,7 +47,7 @@ button.q{background:transparent;color:var(--gold);border:1px solid var(--line)}b
 #v header{display:flex;align-items:center;gap:8px;padding:8px;color:#fff}#v header span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #v button{background:rgba(255,255,255,.15);color:#fff}#stage{flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative}
 #stage img,#stage video{max-width:100%;max-height:100%}#stage .msg{color:#ddd;padding:24px;text-align:center}
-#prev,#next{position:absolute;top:50%;transform:translateY(-50%);font-size:1.6rem}#prev{left:8px}#next{right:8px}</style></head>
+</style></head>
 <body><main><h1 id="t">DASH files</h1><p class="m" id="free">Loading...</p>
 <div class="card" id="adm" hidden><strong>Owner</strong><p class="m" id="admst"></p>
 <div class="row"><button id="upt" type="button"></button><button id="stop" type="button" class="q">Stop sharing</button></div></div>
@@ -57,7 +57,7 @@ button.q{background:transparent;color:var(--gold);border:1px solid var(--line)}b
 <div class="card"><ul id="list" aria-live="polite"></ul></div></main>
 <div id="v" role="dialog" aria-modal="true" aria-label="Viewer"><header><button id="vx" type="button" aria-label="Close viewer">Close</button>
 <span id="vn"></span><small id="vi"></small><a id="vs" style="color:#fff">Save</a></header>
-<div id="stage"><button id="prev" type="button" aria-label="Previous">&lsaquo;</button><div id="slot"></div><button id="next" type="button" aria-label="Next">&rsaquo;</button></div></div>
+<div id="stage"><div id="slot"></div></div></div>
 <script>
 const $=id=>document.getElementById(id);
 let key='';try{const h=new URLSearchParams(location.hash.slice(1));key=h.get('k')||sessionStorage.getItem('dashk')||'';if(h.get('k')){sessionStorage.setItem('dashk',key);history.replaceState(null,'',location.pathname)}}catch(_){}
@@ -89,7 +89,7 @@ else{el=document.createElement('img');el.alt=f.n;el.onerror=()=>{s.innerHTML='<p
 el.src=url(f.n);s.append(el);$('vn').textContent=f.n;$('vi').textContent=(at+1)+' of '+media.length;$('vs').href=url(f.n)+'&dl=1';
 $('v').classList.add('on');$('vx').focus();const nx=media[(at+1)%media.length];if(nx&&IMG.test(nx.n)){new Image().src=url(nx.n)}}
 function close(){$('slot').innerHTML='';$('v').classList.remove('on')}
-$('vx').onclick=close;$('prev').onclick=()=>show(at-1);$('next').onclick=()=>show(at+1);
+$('vx').onclick=close;
 document.addEventListener('keydown',e=>{if(!$('v').classList.contains('on'))return;if(e.key==='Escape')close();if(e.key==='ArrowRight')show(at+1);if(e.key==='ArrowLeft')show(at-1)});
 let x0=null;$('stage').addEventListener('touchstart',e=>{x0=e.touches[0].clientX},{passive:true});
 $('stage').addEventListener('touchend',e=>{if(x0===null)return;const dx=e.changedTouches[0].clientX-x0;x0=null;if(Math.abs(dx)>50)show(at+(dx<0?1:-1))});
