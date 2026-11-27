@@ -46,7 +46,8 @@ button.q{background:transparent;color:var(--gold);border:1px solid var(--line)}b
 #v{position:fixed;inset:0;background:#000;display:none;flex-direction:column;z-index:9;touch-action:pan-y}#v.on{display:flex}
 #v header{display:flex;align-items:center;gap:8px;padding:8px;color:#fff}#v header span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #v button{background:rgba(255,255,255,.15);color:#fff}#stage{flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative}
-#stage img,#stage video{max-width:100%;max-height:100%}#stage .msg{color:#ddd;padding:24px;text-align:center}
+#stage img,#stage video{max-width:100%;max-height:100%}
+.th{flex:none;width:48px;height:48px;border-radius:6px;background:var(--line) center/cover no-repeat;display:flex;align-items:center;justify-content:center;font-size:.7rem;color:var(--muted);cursor:pointer}#stage .msg{color:#ddd;padding:24px;text-align:center}
 </style></head>
 <body><main><h1 id="t">DASH files</h1><p class="m" id="free">Loading...</p>
 <div class="card" id="adm" hidden><strong>Owner</strong><p class="m" id="admst"></p>
@@ -76,12 +77,35 @@ const l=$('list');l.innerHTML='';if(!files.length){l.innerHTML='<li class="m">No
 for(const f of files){const li=document.createElement('li');const b=document.createElement('button');b.className='name';b.type='button';b.textContent=f.n;
 const mi=media.indexOf(f);b.onclick=()=>mi>=0?show(mi):location.href=url(f.n);
 const s=document.createElement('small');s.textContent=size(f.s);const d=document.createElement('a');d.href=url(f.n)+'&dl=1';d.textContent='Save';d.setAttribute('aria-label','Save '+f.n);
-li.append(b,s,d);if(j.admin){const x=document.createElement('button');x.className='del';x.type='button';x.textContent='Delete';x.setAttribute('aria-label','Delete '+f.n);
+const t=thumb(f);t.onclick=b.onclick;li.append(t,b,s,d);if(j.admin){const x=document.createElement('button');x.className='del';x.type='button';x.textContent='Delete';x.setAttribute('aria-label','Delete '+f.n);
 x.onclick=()=>{if(confirm('Delete '+f.n+'? This can\'t be undone.'))post('/api/admin/delete?n='+encodeURIComponent(f.n))};li.append(x)}l.append(li)}}
 catch(e){$('free').textContent="DASH isn't answering. Check you're still on the DASH-Share Wi-Fi."}}
 async function post(p){const r=await fetch(p,{method:'POST',headers:H()});const j=await r.json().catch(()=>({ok:false,error:'no answer'}));
 $('st').textContent=j.ok?'Done':"Didn't work: "+j.error;load()}
 $('stop').onclick=()=>{if(confirm('Stop sharing? Everyone is disconnected, you too.'))post('/api/admin/stop')};
+// Thumbnails are made on the phone, one at a time so DASH isn't swamped:
+// a JPEG's built-in EXIF preview (first 64 KB), a video frame, or a small picture.
+const TH='dth1:',q=[];let busy=0;
+const io='IntersectionObserver'in window?new IntersectionObserver(es=>{for(const e of es)if(e.isIntersecting){io.unobserve(e.target);q.push(e.target);pump()}},{rootMargin:'200px'}):null;
+function thumb(f){const t=document.createElement('span');t.className='th';t.setAttribute('aria-hidden','true');t.textContent=(f.n.includes('.')?f.n.split('.').pop():'').slice(0,4).toUpperCase();
+t.dataset.n=f.n;t.dataset.s=f.s;let c=null;try{c=localStorage.getItem(TH+f.n+':'+f.s)}catch(_){}
+if(c)put(t,c);else if(IMG.test(f.n)||VID.test(f.n)){if(io)io.observe(t);else{q.push(t);pump()}}return t}
+function put(t,d){t.textContent='';t.style.backgroundImage='url('+d+')'}
+async function pump(){if(busy||!q.length)return;busy=1;const t=q.shift();
+if(t.isConnected){try{const d=await make(t.dataset.n,+t.dataset.s);if(d){put(t,d);try{localStorage.setItem(TH+t.dataset.n+':'+t.dataset.s,d)}catch(_){}}}catch(_){}}
+busy=0;pump()}
+function draw(src,w,h){const c=document.createElement('canvas');c.width=c.height=96;const k=Math.max(96/w,96/h);
+c.getContext('2d').drawImage(src,(96-w*k)/2,(96-h*k)/2,w*k,h*k);return c.toDataURL('image/jpeg',.7)}
+function pic(u){return new Promise((ok,no)=>{const i=new Image();i.onload=()=>ok(i);i.onerror=no;i.src=u})}
+async function make(n,s){
+if(VID.test(n))return new Promise(ok=>{const v=document.createElement('video');v.muted=true;v.playsInline=true;v.preload='metadata';
+let tm;const done=d=>{clearTimeout(tm);v.removeAttribute('src');v.load();ok(d)};tm=setTimeout(()=>done(null),15000);
+v.onloadedmetadata=()=>{v.currentTime=Math.min(1,(v.duration||2)/2)};v.onseeked=()=>{try{done(draw(v,v.videoWidth,v.videoHeight))}catch(_){done(null)}};
+v.onerror=()=>done(null);v.src=url(n)});
+if(/\.jpe?g$/i.test(n)&&s>300000){const r=await fetch(url(n),{headers:{Range:'bytes=0-65535'}});const b=new Uint8Array(await r.arrayBuffer());
+for(let i=4;i<b.length-3;i++)if(b[i]==255&&b[i+1]==216&&b[i+2]==255){for(let k=i+2;k<b.length-1;k++)if(b[k]==255&&b[k+1]==217){
+const u=URL.createObjectURL(new Blob([b.slice(i,k+2)],{type:'image/jpeg'}));try{const m=await pic(u);return draw(m,m.naturalWidth,m.naturalHeight)}finally{URL.revokeObjectURL(u)}}break}}
+if(s>1500000)return null;const m=await pic(url(n));return draw(m,m.naturalWidth,m.naturalHeight)}
 function show(i){at=(i+media.length)%media.length;const f=media[at];const s=$('slot');s.innerHTML='';
 let el;if(VID.test(f.n)){el=document.createElement('video');el.controls=true;el.playsInline=true;el.autoplay=true;el.preload='metadata';
 el.onerror=()=>{s.innerHTML='<p class="msg">This phone can\'t play this video. Save it and open it in another app.</p>'}}

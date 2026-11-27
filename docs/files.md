@@ -31,6 +31,12 @@ It's built in: a **Files** tab, a Home card and a row in Links.
 The phone does the decoding, so MP4, MOV and full-size photos play normally.
 Tap a photo or video to open the viewer, then swipe left or right to go
 to the next one without going back to the list. **Save** downloads a file.
+
+Each file gets a small thumbnail that the phone makes itself, one file at a
+time so DASH isn't slowed down. For a photo it reads only the first 64 KB and
+uses the preview the camera saved inside the JPEG. For a video it grabs a frame
+near the start. The phone keeps thumbnails, so they don't load again. A photo
+with no saved preview that is over 1.5 MB shows its type (JPG) instead.
 Guests see and play everything too; only the owner page can delete.
 DASH sends about 0.5 MB/s shared by everyone: one person can stream a 720p
 clip; for 1080p or several viewers, Save first. Files are only served over
