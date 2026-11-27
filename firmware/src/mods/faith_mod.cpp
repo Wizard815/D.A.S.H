@@ -22,8 +22,10 @@ char openThread[40] = "";  // the thread being read, by id; empty: the list
 uint32_t drawnProjectsRev = UINT32_MAX;
 uint32_t drawnProjectsLinks = UINT32_MAX;
 
-uint16_t statusColour(const char* st) {
+uint16_t statusColour(const dash::GlanceThread& t) {
+  const char* st = t.status;
   if (dash::threadNeedsYou(st)) return BAD;
+  if (!strcmp(t.stage, "review")) return GOLD;
   if (!strcmp(st, "working")) return GOLD;
   return MUTED;
 }
@@ -77,18 +79,18 @@ void drawThread(int ti) {
   text(g.projects[t.project].name, 16, kTop + 16, 2, MUTED);
   int y = wrap(t.title, 16, kTop + 38, W - 32, 4, TEXT, BG, 2) + 6;
   // Status as a badge with words.
-  const char* words = dash::threadStatusText(t.status);
+  const char* words = dash::threadWords(t);
   int bw = tft.textWidth(words, 2) + 20;
   tft.fillRoundRect(16, y, bw, 26, 13, CARD);
   tft.setTextDatum(ML_DATUM);
-  tft.setTextColor(statusColour(t.status), CARD);
+  tft.setTextColor(statusColour(t), CARD);
   tft.drawString(words, 26, y + 13, 2);
   y += 42;
   if (*t.last) {
     text("Latest", 16, y, 2, MUTED);
     y = wrap(t.last, 16, y + 22, W - 32, 4, TEXT, BG, 4) + 12;
   }
-  snprintf(buf, sizeof buf, "%s", dash::threadNeedsYou(t.status) ? "Answer it in the FAITH app or a chat." : "Read it all or send it more in the FAITH app.");
+  snprintf(buf, sizeof buf, "%s", t.throwaway ? "A private thread: open it in the FAITH app." : dash::threadNeedsYou(t.status) ? "Answer it in the FAITH app or a chat." : "Read it all or send it more in the FAITH app.");
   wrap(buf, 16, y, W - 32, 2, MUTED, BG, 2);
   navButton("Back", 12, W - 24, false);
 }
@@ -148,8 +150,8 @@ void drawProjects(bool full) {
     tft.drawString(line, 24, y + 7, 2);
     tft.setTextColor(TEXT, CARD);
     tft.drawString(">", W - 32, y + 7, 2);
-    const char* words = dash::threadStatusText(t.status);
-    tft.setTextColor(statusColour(t.status), CARD);
+    const char* words = dash::threadWords(t);
+    tft.setTextColor(statusColour(t), CARD);
     tft.drawString(words, 24, y + 27, 2);
     int x = 24 + tft.textWidth(words, 2) + 10;
     if (*t.last && strcmp(t.last, words)) {

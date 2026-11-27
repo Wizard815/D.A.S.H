@@ -215,6 +215,19 @@ void test_glance_words() {
   glanceSummary(g, line, sizeof line);
   TEST_ASSERT_EQUAL_STRING("Nothing going on", line);
 }
+void test_glance_stage_and_throwaway() {
+  const char* j = "{\"projects\":[{\"id\":\"p\",\"name\":\"Sam\",\"needs_you\":0,\"working\":1,\"review\":2,\"threads\":["
+                  "{\"id\":\"a\",\"title\":\"Plan trip\",\"status\":\"done\",\"stage\":\"review\",\"last\":\"Here it is\"},"
+                  "{\"id\":\"b\",\"title\":\"Throwaway thread\",\"status\":\"working\",\"last\":\"\",\"throwaway\":true}]}]}";
+  Glance g;
+  TEST_ASSERT_TRUE(parseGlance(j, strlen(j), g));
+  TEST_ASSERT_EQUAL_STRING("Ready for review", threadWords(g.threads[0]));
+  TEST_ASSERT_EQUAL_STRING("Working", threadWords(g.threads[1]));  // no stage: status words
+  TEST_ASSERT_TRUE(g.threads[1].throwaway);
+  char line[48];
+  glanceSummary(g, line, sizeof line);
+  TEST_ASSERT_EQUAL_STRING("1 working, 2 to review", line);
+}
 void test_glance_rows() {
   TEST_ASSERT_TRUE(parseGlance(kGlance, strlen(kGlance), g));
   GlanceRow rows[16];
@@ -564,6 +577,7 @@ int main() {
   RUN_TEST(test_glance_caps_and_clips);
   RUN_TEST(test_glance_words);
   RUN_TEST(test_glance_rows);
+  RUN_TEST(test_glance_stage_and_throwaway);
   RUN_TEST(test_ascii_copy_bounds);
   RUN_TEST(test_mods_route_by_id);
   RUN_TEST(test_mods_screens_skip_disabled);
