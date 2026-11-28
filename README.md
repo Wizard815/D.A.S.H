@@ -1,5 +1,7 @@
 # D.A.S.H: Direct Agent System Hub
 
+[![License: PolyForm Shield 1.0.0](https://img.shields.io/badge/license-PolyForm%20Shield%201.0.0-blue)](LICENSE)
+
 A pocket-sized ESP32 companion that talks to your whole homelab agent stack:
 hold a button, speak, and the answer, approvals and your day appear on a small
 touchscreen. Formerly called PocketAgent.
@@ -36,3 +38,12 @@ tested on hardware yet. See [firmware/README.md](firmware/README.md),
 - [Integrations](docs/integrations.md)
 - [Roadmap](docs/roadmap.md)
 - [Open questions](docs/open-questions.md)
+
+## License
+
+D.A.S.H is source-available under the
+[PolyForm Shield License 1.0.0](LICENSE). You can read, run, change and share
+it for free, including at work. You can't sell it or offer it as a competing
+product or hosted service without permission: open an issue titled
+"License request" to ask. [docs/LICENSING.md](docs/LICENSING.md) explains it
+in plain English. Versions published before the switch stay under Apache-2.0.
