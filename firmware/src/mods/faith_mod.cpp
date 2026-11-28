@@ -1,5 +1,6 @@
 #include "faith_mod.h"
 
+#include "ble_reports.h"
 #include "config.h"
 #include "gfx.h"
 
@@ -205,6 +206,13 @@ void FaithMod::begin() {
 void FaithMod::loop(uint32_t now, bool netUp) {
   if (health_.enabled) health_.loop(now, netUp);
   if (projects_.enabled) projects_.loop(now, netUp);
+  static uint32_t lastSum = 0;  // the phone gets the Home card's words when they change
+  if (now - lastSum >= 1000) {
+    lastSum = now;
+    dash::HomeCard c;
+    homeCard(c, now);
+    ble_reports::summary(id(), c.line);
+  }
 }
 
 const char* FaithMod::detail() const {

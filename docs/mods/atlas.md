@@ -41,6 +41,29 @@ battery, fuel, MPG now and trip, range), **Codes** (check-engine light, each
 code with words, "Stop soon" on overheating, misfire and oil pressure), **Trip**
 (sync, weather, the Pi's battery and mode, position).
 
+### QR button
+
+The **QR** button next to the Atlas heading puts a phone on the truck in two
+scans:
+
+1. **Truck Wi-Fi**: a standard join code (`WIFI:T:WPA;S:<name>;P:<password>;;`,
+   with `\ ; , : "` escaped) from `DASH_ATLAS_WIFI_SSID` and
+   `DASH_ATLAS_WIFI_PASS`. The network's name is written under it; the
+   password isn't.
+2. Tap the code: **Truck Share**, the copyparty address
+   `http://<host>:3923/` to open in the phone's browser. The host is
+   `DASH_ATLAS_SHARE_HOST` if set, else the truck router (the Pi) while DASH
+   is on the truck Wi-Fi, else `atlas.local`. The port is
+   `DASH_ATLAS_SHARE_PORT`.
+
+Tap again to go back to the Wi-Fi code; **Close** returns to the pages.
+With no `DASH_ATLAS_WIFI_SSID` the first screen says what to set instead of
+a code. Anyone who sees the code can join the truck Wi-Fi, so show it only
+to people you'd tell the password.
+
+DASH also sends Atlas alerts and the Atlas summary to a paired phone over
+Bluetooth, without Wi-Fi: [ble-reports.md](../ble-reports.md).
+
 ### Fob page
 
 The fourth Atlas page drives the fob module (remote start, lock and unlock)

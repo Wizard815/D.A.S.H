@@ -64,6 +64,10 @@ class AtlasMod : public dash::Mod, public dash::ModView {
   void fobCommand(const char* c, uint32_t now);
   void fobPause(const char* body, uint32_t now);
   void drawFob(uint32_t now);
+  // QR screen (the QR button in the header): join the truck Wi-Fi, then a
+  // tap for the Truck Share's address.
+  void drawQr();
+  void shareUrl(char* buf, size_t n) const;
 
   static void onMqtt(char* topic, uint8_t* payload, unsigned int len);
   static AtlasMod* self_;
@@ -87,4 +91,7 @@ class AtlasMod : public dash::Mod, public dash::ModView {
   bool fobHave_ = false;
   uint32_t fobNext_ = 0, armUntil_ = 0, fobRev_ = 0, drawnFobRev_ = UINT32_MAX;
   char fobMsg_[64] = "";
+  uint8_t qr_ = 0;  // 0 off, 1 truck Wi-Fi, 2 Truck Share address
+  bool qrDrawn_ = false;
+  uint32_t lastSum_ = 0;  // last summary handed to the phone reports
 };

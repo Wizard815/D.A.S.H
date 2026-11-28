@@ -5,6 +5,7 @@
 #include <time.h>
 
 #include "battery.h"
+#include "ble_reports.h"
 #include "files_link.h"
 #include "gfx.h"
 #include "hw.h"
@@ -380,8 +381,11 @@ void tapHome(int x, int y) {
 }
 
 // ---------- Device ----------
+constexpr int kDevRowY0 = kTop + 52, kDevRowH = 28;
+uint32_t forgetArmed = 0;  // "Forget phones" needs a second tap within 5 s
+
 void row(int i, const char* label, const char* value) {
-  int y = kTop + 56 + i * 32;
+  int y = kDevRowY0 + i * kDevRowH;
   text(label, 16, y, 2, MUTED);
   text(value, 120, y, 2, TEXT, TL_DATUM, W - 130);
 }
@@ -390,8 +394,7 @@ void drawDevice(bool full) {
   if (full) {
     clearContent();
     heading("Device");
-    text("Hold BOOT while powering on to", 16, kNavY - 48, 2, MUTED);
-    text("calibrate the touch screen again.", 16, kNavY - 28, 2, MUTED);
+    text("Hold BOOT at power-on to recalibrate touch.", 16, kNavY - 26, 2, MUTED);
     navButton("Back to Links", 12, W - 24, false);
   }
   char v[48];
@@ -410,6 +413,25 @@ void drawDevice(bool full) {
   snprintf(v, sizeof v, "%uh %02um %02us", s / 3600, (s / 60) % 60, s % 60);
   row(6, "Up for", v);
   row(7, "Firmware", DASH_VERSION);
+  // Bluetooth reports to the phone; tap twice to forget paired phones.
+  if (forgetArmed && millis() - forgetArmed > 5000) forgetArmed = 0;
+  row(8, "Phone", forgetArmed ? "tap again to forget paired phones" : ble_reports::status());
+}
+
+void tapDevice(int y) {
+  if (y >= kNavY) {
+    show(Screen::Links);
+    return;
+  }
+  int ry = kDevRowY0 + 8 * kDevRowH;
+  if (!DASH_BLE_REPORTS || y < ry - 6 || y >= ry + kDevRowH + 6) return;
+  if (forgetArmed) {
+    forgetArmed = 0;
+    ble_reports::forgetPhones();
+  } else {
+    forgetArmed = millis();
+  }
+  drawDevice(false);
 }
 
 // ---------- Talk (placeholder) ----------
@@ -455,7 +477,7 @@ void onTap(int x, int y) {
   switch (screen) {
     case Screen::Home: tapHome(x, y); break;
     case Screen::Links: tapLinks(x, y); break;
-    case Screen::Device: if (y >= kNavY) show(Screen::Links); break;
+    case Screen::Device: tapDevice(y); break;
     case Screen::Mods: tapMods(x, y); break;
     case Screen::ModSettings: tapModSettings(x, y); break;
     case Screen::Files:
@@ -541,7 +563,42 @@ void talkEnd() {
 uint32_t lastActivity() { return activity; }
 void noteActivity(uint32_t now) { activity = now; }
 
+// A phone pairing for Bluetooth reports: the code, over whatever is open.
+uint32_t shownPasskey = 0;
+
+void drawPasskey(uint32_t pk) {
+  clearContent();
+  heading("Pair a phone");
+  char code[8];
+  snprintf(code, sizeof code, "%06u", (unsigned)pk);
+  text(code, W / 2, kTop + 90, 7, GOLD, TC_DATUM);
+  wrap("A phone is pairing with DASH for live reports. Type this code on the phone. "
+       "If it isn't your phone, tap Not mine.",
+       16, kTop + 170, W - 32, 2, TEXT, BG, 5);
+  navButton("Not mine", 12, W - 24, false);
+}
+
 void loop(uint32_t now) {
+  uint32_t pk = ble_reports::passkey();
+  if (pk != shownPasskey) {
+    shownPasskey = pk;
+    if (pk) {
+      noteActivity(now);  // wakes the backlight
+      drawPasskey(pk);
+    } else {
+      needFull = true;  // paired or gone: back to what was open
+    }
+  }
+  if (shownPasskey) {
+    if (now - lastTouch >= 20) {
+      lastTouch = now;
+      uint16_t x, y;
+      bool down = tft.getTouch(&x, &y);
+      if (down && !touching && y >= kNavY && y < kNavY + kNavH) ble_reports::rejectPairing();
+      touching = down;
+    }
+    return;
+  }
   // Touch: act on the press, not while held.
   if (now - lastTouch >= 20) {
     lastTouch = now;

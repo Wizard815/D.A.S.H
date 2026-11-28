@@ -4,6 +4,7 @@
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 
+#include "ble_reports.h"
 #include "config.h"
 #include "gfx.h"
 
@@ -101,6 +102,10 @@ void TitanMod::fetch() {
   }
   http.end();
   if (code == 200 || state_ != was) rev_++;
+  // The phone gets the Home card's words when they change.
+  dash::HomeCard c;
+  homeCard(c, millis());
+  ble_reports::summary(id(), c.line);
 }
 
 bool TitanMod::homeCard(dash::HomeCard& c, uint32_t) const {

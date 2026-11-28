@@ -39,4 +39,9 @@ bool hit(int x, int y, int bx, int by, int bw, int bh);
 void segments(const char* const* labels, int n, int selected, int y, int h = 44);
 int segmentAt(int x, int n);  // which segment a tap at x is in
 
+// A QR code of `s`, black on white with a quiet zone, in a square of at most
+// maxPx at (x, y). Picks the smallest QR version that holds it (up to 10,
+// 271 bytes). Returns the side drawn, 0 if `s` is too long.
+int qr(const char* s, int x, int y, int maxPx);
+
 }  // namespace gfx

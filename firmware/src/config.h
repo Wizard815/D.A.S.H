@@ -60,3 +60,10 @@
 #ifndef DASH_ESPNOW_KEY
 #define DASH_ESPNOW_KEY ""  // 16 characters, the same on the bridge; empty: not encrypted
 #endif
+
+// Live reports to the phone over Bluetooth LE (docs/ble-reports.md). 1: DASH
+// advertises as DASH-xxxx and sends mod summaries, Atlas alerts and its
+// battery to a phone paired with a passkey. 0: no Bluetooth at all.
+#ifndef DASH_BLE_REPORTS
+#define DASH_BLE_REPORTS 1
+#endif

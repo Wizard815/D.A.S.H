@@ -11,6 +11,7 @@
 #include "titan.h"
 #include "fob.h"
 #include "mod.h"
+#include "report.h"
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -677,6 +678,115 @@ void test_mjpeg_frames() {
   const uint8_t junk[] = {1, 2, 3};
   TEST_ASSERT_FALSE(mjpegFrame(junk, sizeof junk, &a, &b));
 }
+void test_wifi_join_code_escapes_all() {
+  char b[128];
+  // Every special character in the Wi-Fi QR format, in both the name and the password.
+  wifiJoinCode("Atlas;1,2:3\\4\"", "p;a,s:s\\w\"d", b, sizeof b);
+  TEST_ASSERT_EQUAL_STRING("WIFI:T:WPA;S:Atlas\\;1\\,2\\:3\\\\4\\\";P:p\\;a\\,s\\:s\\\\w\\\"d;;", b);
+  // Plain names are left alone.
+  wifiJoinCode("Atlas", "truck-pass 1", b, sizeof b);
+  TEST_ASSERT_EQUAL_STRING("WIFI:T:WPA;S:Atlas;P:truck-pass 1;;", b);
+  // Never ends on a lone backslash when cut short.
+  char small[20];
+  wifiJoinCode("Atlas", ";;;;;;;;;;", small, sizeof small);
+  size_t l = strlen(small);
+  TEST_ASSERT_TRUE(l < sizeof small);
+  size_t bs = 0;
+  for (size_t i = l; i > 0 && small[i - 1] == '\\'; i--) bs++;
+  TEST_ASSERT_EQUAL(0, bs % 2);
+}
+
+// ---------- BLE reports ----------
+void test_report_summary_frame() {
+  char b[256];
+  size_t n = summaryFrame("atlas", "Asleep, 3 h ago", 1764300000, b, sizeof b);
+  TEST_ASSERT_EQUAL_STRING("{\"m\":\"atlas\",\"t\":\"sum\",\"s\":\"Asleep, 3 h ago\",\"ts\":1764300000}", b);
+  TEST_ASSERT_EQUAL(strlen(b), n);
+  summaryFrame("titan", "Say \"hi\" \\ now\n", 0, b, sizeof b);
+  TEST_ASSERT_EQUAL_STRING("{\"m\":\"titan\",\"t\":\"sum\",\"s\":\"Say \\\"hi\\\" \\\\ now \"}", b);
+  char m[8], t[8];
+  TEST_ASSERT_TRUE(peekFrame(b, strlen(b), m, sizeof m, t, sizeof t));
+  TEST_ASSERT_EQUAL_STRING("titan", m);
+  TEST_ASSERT_EQUAL_STRING("sum", t);
+  // Bad mod ids and no room.
+  TEST_ASSERT_EQUAL(0, summaryFrame("a\"b", "x", 0, b, sizeof b));
+  TEST_ASSERT_EQUAL(0, summaryFrame("", "x", 0, b, sizeof b));
+  char tiny[10];
+  TEST_ASSERT_EQUAL(0, summaryFrame("atlas", "x", 0, tiny, sizeof tiny));
+}
+
+void test_report_summary_truncates() {
+  char text[600], b[512];
+  for (int i = 0; i < 599; i++) text[i] = i % 3 == 0 ? '"' : 'a';
+  text[599] = 0;
+  size_t n = summaryFrame("atlas", text, 1764300000, b, sizeof b);
+  TEST_ASSERT_TRUE(n <= kFrameMax);
+  TEST_ASSERT_EQUAL(strlen(b), n);
+  TEST_ASSERT_NOT_NULL(strstr(b, "...\",\"ts\":1764300000}"));
+  char m[8], t[8];
+  TEST_ASSERT_TRUE(peekFrame(b, n, m, sizeof m, t, sizeof t));  // still valid JSON
+  // UTF-8 is never cut in the middle: "°" is 2 bytes.
+  char deg[400] = "";
+  for (int i = 0; i < 150; i++) strcat(deg, "\xC2\xB0");
+  n = summaryFrame("atlas", deg, 0, b, sizeof b);
+  TEST_ASSERT_TRUE(n <= kFrameMax);
+  const char* s = strstr(b, "\"s\":\"") + 5;
+  const char* dots = strstr(b, "...");
+  TEST_ASSERT_NOT_NULL(dots);
+  TEST_ASSERT_EQUAL(0, (dots - s) % 2);
+  // A small buffer caps it too.
+  char sm[64];
+  n = summaryFrame("atlas", text, 0, sm, sizeof sm);
+  TEST_ASSERT_TRUE(n > 0 && n < sizeof sm);
+  TEST_ASSERT_TRUE(peekFrame(sm, n, m, sizeof m, t, sizeof t));
+}
+
+void test_report_battery_frame() {
+  char b[80];
+  batteryFrame(3921, 71, 0, b, sizeof b);
+  TEST_ASSERT_EQUAL_STRING("{\"m\":\"dash\",\"t\":\"bat\",\"v\":3.92,\"pct\":71}", b);
+  batteryFrame(3996, 99, 1764300000, b, sizeof b);
+  TEST_ASSERT_EQUAL_STRING("{\"m\":\"dash\",\"t\":\"bat\",\"v\":4.00,\"pct\":99,\"ts\":1764300000}", b);
+  char tiny[16];
+  TEST_ASSERT_EQUAL(0, batteryFrame(3921, 71, 0, tiny, sizeof tiny));
+}
+
+void test_report_alert_frame() {
+  AtlasState s;
+  char b[256];
+  TEST_ASSERT_EQUAL(0, atlasAlertFrame(s, 0, b, sizeof b));  // no alert yet
+  const char* f = "{\"m\":\"atlas\",\"t\":\"alert\",\"s\":88,\"id\":\"a_17\",\"k\":\"cooler\",\"lvl\":2,\"msg\":\"Cooler at 6 C\",\"snap\":1}";
+  s.apply(f, strlen(f), 1000);
+  size_t n = atlasAlertFrame(s, 1764300000, b, sizeof b);
+  TEST_ASSERT_EQUAL_STRING(
+      "{\"m\":\"atlas\",\"t\":\"alert\",\"id\":\"a_17\",\"k\":\"cooler\",\"lvl\":2,\"msg\":\"Cooler at 6 C\",\"snap\":1,\"ts\":1764300000}", b);
+  TEST_ASSERT_EQUAL(strlen(b), n);
+}
+
+void test_report_ble_name() {
+  const uint8_t mac[6] = {0x24, 0x6f, 0x28, 0x01, 0xa1, 0x0b};
+  char b[16];
+  bleName(mac, b, sizeof b);
+  TEST_ASSERT_EQUAL_STRING("DASH-A10B", b);
+}
+
+void test_report_summary_gate() {
+  SummaryGate g;
+  TEST_ASSERT_TRUE(g.offer("All 12 up", 1000));    // first: at once
+  TEST_ASSERT_FALSE(g.offer("All 12 up", 20000));  // same text: never again
+  TEST_ASSERT_TRUE(g.offer("Plex is down", 20001)); // changed, gap over
+  TEST_ASSERT_FALSE(g.offer("All 12 up", 25000));  // changed, inside 10 s
+  TEST_ASSERT_FALSE(g.offer("All 12 up", 30000));
+  TEST_ASSERT_TRUE(g.offer("All 12 up", 30001));   // goes out once the gap is over
+  g.reset();
+  TEST_ASSERT_TRUE(g.offer("All 12 up", 30002));   // a new phone gets it at once
+  // millis() wrap
+  SummaryGate w;
+  TEST_ASSERT_TRUE(w.offer("a", 0xFFFFF000u));
+  TEST_ASSERT_FALSE(w.offer("b", 0x00000100u));
+  TEST_ASSERT_TRUE(w.offer("b", 0x00002000u + 10000));
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_battery_ends);
@@ -726,5 +836,12 @@ int main() {
   RUN_TEST(test_atlas_power_source);
   RUN_TEST(test_fob_status);
   RUN_TEST(test_atlas_alerts);
+  RUN_TEST(test_wifi_join_code_escapes_all);
+  RUN_TEST(test_report_summary_frame);
+  RUN_TEST(test_report_summary_truncates);
+  RUN_TEST(test_report_battery_frame);
+  RUN_TEST(test_report_alert_frame);
+  RUN_TEST(test_report_ble_name);
+  RUN_TEST(test_report_summary_gate);
   return UNITY_END();
 }

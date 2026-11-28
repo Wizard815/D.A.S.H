@@ -1,5 +1,7 @@
 #include "gfx.h"
 
+#include <qrcode.h>
+
 namespace gfx {
 
 TFT_eSPI tft;
@@ -109,6 +111,24 @@ int segmentAt(int x, int n) {
   if (n <= 0) return 0;
   int i = (x - 12) / ((W - 24) / n);
   return i < 0 ? 0 : i >= n ? n - 1 : i;
+}
+
+int qr(const char* s, int x, int y, int maxPx) {
+  constexpr int kMaxVersion = 10;
+  constexpr int kSide = 4 * kMaxVersion + 17;
+  static uint8_t buf[(kSide * kSide + 7) / 8];
+  QRCode code;
+  int v = 2;
+  while (v <= kMaxVersion && qrcode_initText(&code, buf, v, ECC_LOW, s) != 0) v++;
+  if (v > kMaxVersion) return 0;
+  int scale = maxPx / (code.size + 8);  // with a 4-module quiet zone each side
+  if (scale < 2) scale = 2;
+  int side = (code.size + 8) * scale;
+  tft.fillRect(x, y, side, side, TFT_WHITE);
+  for (uint8_t my = 0; my < code.size; my++)
+    for (uint8_t mx = 0; mx < code.size; mx++)
+      if (qrcode_getModule(&code, mx, my)) tft.fillRect(x + (mx + 4) * scale, y + (my + 4) * scale, scale, scale, TFT_BLACK);
+  return side;
 }
 
 }  // namespace gfx
