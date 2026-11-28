@@ -74,6 +74,37 @@ home Wi-Fi names, then `cd bridge && pio run -t upload`.
   home Wi-Fi name every 10 minutes and wakes the Pi when it sees one. It
   sleeps between looks (about 10 uA) and wakes at once when the Pi turns on.
   After 10 wakes with no good sync it slows to hourly.
+- **Remote start over Bluetooth** (with `BRIDGE_START_KEY` set): see below.
+  It then wakes every 6 s and listens on Bluetooth for 1.5 s, about 5 mA on
+  average instead of 10 uA (measure yours). Use a C3 board with an antenna
+  connector and put the antenna on a window.
+
+### Remote start over Bluetooth
+
+For the DASH phone app near the truck while the Pi is off
+([A.T.L.A.S docs/remote-start.md](https://github.com/Wizard815/A.T.L.A.S/blob/main/docs/remote-start.md)).
+
+1. The phone finds a BLE device named `Atlas` with service
+   `6a7c0001-4a1e-4d4b-9a54-41544c415331` (it retries for about 10 s, because
+   the bridge only listens 1.5 s at a time), asks for a 247-byte MTU, and
+   subscribes to the status characteristic `6a7c0003-...`.
+2. It writes to the command characteristic `6a7c0002-...`:
+   `{"c":"remote_start","nonce":"<16-40 letters, digits, - or _>","exp":<unix s>,"sig":"<hex>"}`
+   where `sig` is HMAC-SHA256 of `remote_start|<nonce>|<exp>` with the 32-byte
+   start key, which the bridge, truckd and the app share.
+3. The bridge checks the signature itself, so strangers can't wake the Pi and
+   drain the battery. It also refuses a nonce it has seen, `exp` in the past or
+   more than 120 s ahead (once truckd has set its clock), and more than one
+   start a minute.
+4. Status says `ok: waking the Pi` or `refused: ...`. The bridge wakes the Pi
+   and, when the Pi is up, sends truckd
+   `{"m":"bridge","t":"cmd","c":"remote_start","nonce":...,"exp":...,"sig":...,"via":"ble"}`.
+   truckd checks it again and does the fob press and safety checks; the result
+   comes back as a `cmd` frame. A start the Pi never wakes for is dropped
+   after 5 minutes.
+
+`tools/atlas-sign.sh <key>` prints a signed request for testing, for example
+with nRF Connect on a phone.
 
 ## What goes wrong
 

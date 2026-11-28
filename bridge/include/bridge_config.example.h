@@ -22,3 +22,14 @@
 #define BRIDGE_UART_TX 21    // to Pi RXD (GPIO15)
 #define BRIDGE_AWAKE_PIN 3   // from a Pi GPIO that is high while the Pi runs (0-5 only: it wakes the C3)
 #define BRIDGE_WAKE_PIN 4    // to the Witty Pi switch line (Pi header GPIO4): pulled low to wake
+
+// Remote start over Bluetooth while the Pi is off (A.T.L.A.S docs/remote-start.md).
+// The 32-byte start key as 64 hex characters, the same one truckd and the
+// DASH phone app use to sign starts. Empty: Bluetooth stays off.
+#define BRIDGE_START_KEY ""
+// The name phones see.
+#define BRIDGE_BLE_NAME "Atlas"
+// While the Pi is off the bridge wakes this often and listens this long, so a
+// phone finds it within a few seconds (about 3-5 mA on average; measure yours).
+#define BRIDGE_BLE_EVERY_S 6
+#define BRIDGE_BLE_LISTEN_MS 1500
