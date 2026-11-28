@@ -36,6 +36,10 @@
 // to copyparty on the Pi (folder /dash), where phones get the fuller viewer.
 // The password of copyparty's "dash" account (write only); empty: no sync.
 #define DASH_ATLAS_SHARE_PW ""
+// Fob page (remote start, lock, unlock, schedule): a truckd owner token.
+// Pair DASH like a phone (press the box's button, then POST /api/pair) and
+// paste the "atl_..." token here. Empty: no Fob page controls.
+#define DASH_ATLAS_OWNER_TOKEN ""
 // ESP-NOW: the bridge's MAC (printed by the bridge at start) and a shared
 // 16-character key, the same as BRIDGE_ESPNOW_KEY. Without a MAC DASH hears
 // any sender; without a key frames aren't encrypted.

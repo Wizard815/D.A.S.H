@@ -41,6 +41,21 @@ battery, fuel, MPG now and trip, range), **Codes** (check-engine light, each
 code with words, "Stop soon" on overheating, misfire and oil pressure), **Trip**
 (sync, weather, the Pi's battery and mode, position).
 
+### Fob page
+
+The fourth Atlas page drives the fob module (remote start, lock and unlock)
+through truckd's HTTP API (`GET /api/fob`, `POST /api/cmd/fob`,
+`POST /api/fob/pause`), never through ESP-NOW frames, so a spoofed frame can't
+start the truck. It needs the truck Wi-Fi and a truckd owner token: pair DASH
+like a phone and set `DASH_ATLAS_OWNER_TOKEN` (and `DASH_ATLAS_API_HOST` if
+truckd isn't the truck router).
+
+- Shows the fob module's battery, pauses or last action, and the first three
+  schedule entries. The DASH phone app edits the schedule.
+- Buttons: Lock, Unlock driver, Unlock all, Start (tap twice within 5 s),
+  Skip next, Clear pause.
+- The result comes back as a `cmd` frame in the header, as for any command.
+
 ## On the Pi
 
 - Mosquitto on the truck network. truckd publishes the frames retained to

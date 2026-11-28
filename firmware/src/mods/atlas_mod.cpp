@@ -1,5 +1,7 @@
 #include "atlas_mod.h"
 
+#include <ArduinoJson.h>
+#include <HTTPClient.h>
 #include <WiFi.h>
 #include <math.h>
 #include <time.h>
@@ -14,12 +16,15 @@ using namespace gfx;
 namespace {
 const char* const kUnits[] = {"US", "Metric"};
 const char* const kLinks[] = {"Auto", "ESP-NOW", "Wi-Fi"};
-const char* const kPages[] = {"Gauges", "Codes", "Trip"};
+const char* const kPages[] = {"Gauges", "Codes", "Trip", "Fob"};
+constexpr int kNPages = 4;
 constexpr char kTopicSub[] = "dash/v1/atlas/#";
 constexpr char kTopicOut[] = "dash/v1/atlas/dash";
 constexpr uint32_t kReqEveryMs = 60000;  // ask again while nothing is heard
 constexpr int kBodyY = kTop + 104;
 constexpr int kCodesPerPage = 3;
+constexpr int kFobBtnW = (W - 24 - 8) / 2, kFobBtnH = 44, kFobBtnY = kBodyY + 132;
+constexpr uint32_t kFobEveryMs = 30000;
 }  // namespace
 
 AtlasMod* AtlasMod::self_ = nullptr;
@@ -57,6 +62,7 @@ void AtlasMod::loop(uint32_t now, bool netUp) {
   // only: MQTT has the retained frames).
   if (useEspNow() && espnowOk_ && !dash::atlasLive(st_, now) && now - lastReq_ >= kReqEveryMs) request(now);
   updateDetail(now);
+  if (open_ && page_ == 3 && fobReachable() && (int32_t)(now - fobNext_) >= 0) fobFetch(now);
 }
 
 void AtlasMod::mqttLoop(uint32_t now, bool netUp) {
@@ -138,6 +144,7 @@ bool AtlasMod::homeCard(dash::HomeCard& c, uint32_t now) const {
 
 // ---------- screen ----------
 void AtlasMod::opened() {
+  open_ = true;
   page_ = 0;
   codePage_ = 0;
   drawnRev_ = UINT32_MAX;
@@ -147,6 +154,12 @@ void AtlasMod::opened() {
 bool AtlasMod::dirty(uint32_t now) {
   bool live = dash::atlasLive(st_, now);
   if (st_.rev != drawnRev_ || live != drawnLive_) return true;
+  if (page_ == 3 && fobRev_ != drawnFobRev_) return true;
+  if (armUntil_ && (int32_t)(now - armUntil_) >= 0) {  // the start confirm ran out
+    armUntil_ = 0;
+    fobRev_++;
+    return true;
+  }
   // Ages ("2 min ago") move: redraw the header every 5 s.
   return now - drawnTick_ >= 5000;
 }
@@ -323,30 +336,191 @@ void AtlasMod::drawTrip(uint32_t now) {
 
 void AtlasMod::draw(uint32_t now, bool full) {
   bool live = dash::atlasLive(st_, now);
-  bool dataChanged = full || st_.rev != drawnRev_ || live != drawnLive_;
+  bool dataChanged = full || st_.rev != drawnRev_ || live != drawnLive_ || (page_ == 3 && fobRev_ != drawnFobRev_);
   drawnTick_ = now;
   drawHeader(now);
-  if (full) segments(kPages, 3, page_, kTop + 50);
+  if (full) segments(kPages, kNPages, page_, kTop + 50);
   if (!dataChanged) return;
   drawnRev_ = st_.rev;
   drawnLive_ = live;
   if (page_ == 0) drawGauges(now, full);
   else if (page_ == 1) drawCodes(now);
-  else drawTrip(now);
+  else if (page_ == 2) drawTrip(now);
+  else drawFob(now);
 }
 
 void AtlasMod::tap(int x, int y, uint32_t now) {
   if (y >= kTop + 50 && y < kTop + 94) {
-    page_ = segmentAt(x, 3);
+    page_ = segmentAt(x, kNPages);
+    if (page_ == 3) fobNext_ = now;  // fetch on the next loop
     codePage_ = 0;
-    segments(kPages, 3, page_, kTop + 50);
+    segments(kPages, kNPages, page_, kTop + 50);
     drawnRev_ = UINT32_MAX;
     tft.fillRect(0, kBodyY, W, kBottom - kBodyY, BG);
     draw(now, true);
+    return;
+  }
+  if (page_ == 3) {
+    // Buttons: Lock | Unlock driver, Unlock all | Start, Skip next | Clear pause.
+    for (int r = 0; r < 3; r++)
+      for (int c = 0; c < 2; c++)
+        if (hit(x, y, 12 + c * (kFobBtnW + 8), kFobBtnY + r * (kFobBtnH + 6), kFobBtnW, kFobBtnH)) {
+          int b = r * 2 + c;
+          if (b == 0) fobCommand("lock", now);
+          else if (b == 1) fobCommand("unlock_driver", now);
+          else if (b == 2) fobCommand("unlock_all", now);
+          else if (b == 3) {
+            // A start needs a second tap within 5 s.
+            if (armUntil_ && (int32_t)(now - armUntil_) < 0) {
+              armUntil_ = 0;
+              fobCommand("start", now);
+            } else {
+              armUntil_ = now + 5000;
+              snprintf(fobMsg_, sizeof fobMsg_, "Tap Start again to start the truck");
+              fobRev_++;
+            }
+          } else if (b == 4) fobPause("{\"skip_next\":true}", now);
+          else fobPause("{\"clear\":true}", now);
+          return;
+        }
     return;
   }
   if (page_ == 1 && y >= kNavY && x >= W - 12 - 128 - 12 && st_.dtc.n > kCodesPerPage) {
     codePage_++;
     drawCodes(now);
   }
+}
+
+// ---------- Fob page ----------
+bool AtlasMod::fobReachable() const {
+  return *DASH_ATLAS_OWNER_TOKEN && WiFi.status() == WL_CONNECTED && (*DASH_ATLAS_API_HOST || net::onAtlasWifi());
+}
+
+int AtlasMod::fobHttp(const char* method, const char* path, const String& body, String* reply) {
+  WiFiClient c;
+  HTTPClient http;
+  http.setTimeout(3000);
+  http.setConnectTimeout(3000);
+  String host = *DASH_ATLAS_API_HOST ? String(DASH_ATLAS_API_HOST) : IPAddress(net::gateway()).toString();
+  String url = "http://" + host + ":" + String(DASH_ATLAS_API_PORT) + path;
+  if (!http.begin(c, url)) return -1;
+  http.addHeader("Authorization", String("Bearer ") + DASH_ATLAS_OWNER_TOKEN);
+  int code;
+  if (!strcmp(method, "GET")) {
+    code = http.GET();
+  } else {
+    http.addHeader("Content-Type", "application/json");
+    code = http.sendRequest(method, body);
+  }
+  if (reply && code > 0) *reply = http.getString();
+  http.end();
+  return code;
+}
+
+namespace {
+// truckd's {"error": "..."} in words, or a fallback.
+void errorWords(const String& body, int code, char* buf, size_t n) {
+  JsonDocument d;
+  if (code > 0 && !deserializeJson(d, body) && d["error"].is<const char*>()) snprintf(buf, n, "%.60s", d["error"].as<const char*>());
+  else if (code == 401 || code == 403) snprintf(buf, n, "truckd refused the owner token");
+  else if (code < 0) snprintf(buf, n, "truckd isn't answering");
+  else snprintf(buf, n, "truckd answered %d", code);
+}
+}  // namespace
+
+void AtlasMod::fobFetch(uint32_t now) {
+  fobNext_ = now + kFobEveryMs;
+  String body;
+  int code = fobHttp("GET", "/api/fob", "", &body);
+  if (code == 200) {
+    dash::FobStatus f;
+    if (dash::parseFob(body.c_str(), body.length(), f)) {
+      fob_ = f;
+      fobHave_ = true;
+    }
+  } else if (!*fobMsg_) {
+    errorWords(body, code, fobMsg_, sizeof fobMsg_);
+  }
+  fobRev_++;
+}
+
+void AtlasMod::fobCommand(const char* c, uint32_t now) {
+  uint32_t unix = unixNow(now);
+  if (unix < 1700000000u) {
+    snprintf(fobMsg_, sizeof fobMsg_, "No clock yet: wait for Atlas or the internet");
+    fobRev_++;
+    return;
+  }
+  char nonce[21];
+  for (int i = 0; i < 20; i++) nonce[i] = "0123456789abcdefghijklmnopqrstuvwxyz"[esp_random() % 36];
+  nonce[20] = 0;
+  char body[128];
+  snprintf(body, sizeof body, "{\"c\":\"%s\",\"nonce\":\"%s\",\"exp\":%lu}", c, nonce, (unsigned long)(unix + 25));
+  String reply;
+  int code = fobHttp("POST", "/api/cmd/fob", body, &reply);
+  if (code == 202 || code == 200) snprintf(fobMsg_, sizeof fobMsg_, "%s sent. Waiting for the fob module...", dash::fobActionWords(c));
+  else errorWords(reply, code, fobMsg_, sizeof fobMsg_);
+  fobNext_ = now + 12000;  // the fob module answers within ~10 s
+  fobRev_++;
+}
+
+void AtlasMod::fobPause(const char* body, uint32_t now) {
+  String reply;
+  int code = fobHttp("POST", "/api/fob/pause", body, &reply);
+  if (code == 200) snprintf(fobMsg_, sizeof fobMsg_, "Done");
+  else errorWords(reply, code, fobMsg_, sizeof fobMsg_);
+  fobNext_ = now;
+  fobRev_++;
+}
+
+void AtlasMod::drawFob(uint32_t now) {
+  drawnFobRev_ = fobRev_;
+  tft.fillRect(0, kBodyY, W, kBottom - kBodyY, BG);
+  if (!*DASH_ATLAS_OWNER_TOKEN) {
+    wrap("Remote start, lock and unlock need a truckd owner token: pair DASH like a phone and set DASH_ATLAS_OWNER_TOKEN in secrets.h. "
+         "The DASH phone app also does all of this.",
+         16, kBodyY + 8, W - 32, 2, MUTED, BG, 6);
+    return;
+  }
+  if (!fobReachable()) {
+    wrap("Join the truck Wi-Fi to use the fob module. Its schedule keeps running on its own.", 16, kBodyY + 8, W - 32, 2, MUTED, BG, 4);
+    return;
+  }
+  char a[72], b[72];
+  int y = kBodyY;
+  tft.fillRoundRect(12, y, W - 24, 56, 8, CARD);
+  if (fobHave_) {
+    if (fob_.battery >= 0) snprintf(a, sizeof a, "Fob module %d%%", fob_.battery);
+    else snprintf(a, sizeof a, "Fob module");
+    textOn(a, 24, y + 6, 2, fob_.battery >= 0 && fob_.battery <= 10 ? BAD : TEXT, CARD);
+    fobPauseWords(fob_, b, sizeof b);
+    if (!*b && *fob_.lastC) snprintf(b, sizeof b, "Last: %s, %s", dash::fobActionWords(fob_.lastC), fob_.lastOk ? "done" : "didn't work");
+    char cut[72];
+    fit(cut, sizeof cut, *b ? b : "Nothing paused", 2, W - 48);
+    textOn(cut, 24, y + 30, 2, MUTED, CARD);
+  } else {
+    textOn("Asking truckd...", 24, y + 18, 2, MUTED, CARD);
+  }
+  y += 62;
+  // Schedule: up to 3 lines here; the phone app edits it.
+  if (fobHave_) {
+    if (!fob_.n) text("No schedule. Set one in the phone app.", 16, y, 2, MUTED);
+    for (int i = 0; i < fob_.n && i < 3; i++) {
+      dash::fobEntryWords(fob_.entries[i], a, sizeof a);
+      if (i == 2 && fob_.n > 3) snprintf(a + strlen(a), sizeof a - strlen(a), " (+%u more)", fob_.n - 3);
+      text(a, 16, y + i * 22, 2, TEXT);
+    }
+  }
+  const char* labels[6] = {"Lock", "Unlock driver", "Unlock all", armUntil_ ? "Tap to start" : "Start", "Skip next", "Clear pause"};
+  for (int r = 0; r < 3; r++)
+    for (int c = 0; c < 2; c++) {
+      int i = r * 2 + c;
+      button(labels[i], 12 + c * (kFobBtnW + 8), kFobBtnY + r * (kFobBtnH + 6), kFobBtnW, kFobBtnH, i == 3 && armUntil_);
+    }
+  if (*fobMsg_) {
+    char cut[72];
+    fit(cut, sizeof cut, fobMsg_, 2, W - 32);
+    text(cut, 16, kFobBtnY + 3 * (kFobBtnH + 6), 2, GOLD);
+  }
+  (void)now;
 }

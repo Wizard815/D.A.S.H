@@ -27,6 +27,15 @@
 #define DASH_ATLAS_MQTT_USER ""
 #define DASH_ATLAS_MQTT_PASS ""
 #endif
+#ifndef DASH_ATLAS_OWNER_TOKEN
+#define DASH_ATLAS_OWNER_TOKEN ""  // truckd owner token (atl_...) for the Fob page; empty: no fob controls
+#endif
+#ifndef DASH_ATLAS_API_HOST
+#define DASH_ATLAS_API_HOST ""  // empty: the truck network's router (the Atlas brain)
+#endif
+#ifndef DASH_ATLAS_API_PORT
+#define DASH_ATLAS_API_PORT 8080
+#endif
 #ifndef DASH_ATLAS_PEER_MAC
 #define DASH_ATLAS_PEER_MAC ""  // the bridge's MAC; empty: hear any ESP-NOW sender
 #endif

@@ -9,6 +9,7 @@
 #include "atlas.h"
 #include "share.h"
 #include "titan.h"
+#include "fob.h"
 #include "mod.h"
 #include <math.h>
 #include <stdio.h>
@@ -586,6 +587,32 @@ void test_atlas_power_source() {
   TEST_ASSERT_EQUAL_STRING("", st.pwr.src);
 }
 
+void test_fob_status() {
+  const char* j = "{\"battery\":87,\"last\":{\"c\":\"start\",\"at\":1764300000,\"ok\":1},"
+                  "\"schedule\":[{\"days\":\"mon-fri\",\"at\":\"07:40\",\"c\":\"start\"},{\"days\":\"sat,sun\",\"at\":\"09:00\",\"c\":\"unlock_all\"}],"
+                  "\"pauses\":{\"skip_next\":false,\"skip\":[\"2026-12-04\"],\"until\":\"\"},\"clock_age_s\":120}";
+  FobStatus f;
+  TEST_ASSERT_TRUE(parseFob(j, strlen(j), f));
+  TEST_ASSERT_EQUAL(87, f.battery);
+  TEST_ASSERT_TRUE(f.lastOk);
+  TEST_ASSERT_EQUAL(2, f.n);
+  char b[48];
+  fobEntryWords(f.entries[0], b, sizeof b);
+  TEST_ASSERT_EQUAL_STRING("Mon-Fri 07:40 Start", b);
+  fobEntryWords(f.entries[1], b, sizeof b);
+  TEST_ASSERT_EQUAL_STRING("Sat,Sun 09:00 Unlock all", b);
+  fobPauseWords(f, b, sizeof b);
+  TEST_ASSERT_EQUAL_STRING("Skips 2026-12-04", b);
+  f.skipNext = true;
+  fobPauseWords(f, b, sizeof b);
+  TEST_ASSERT_EQUAL_STRING("Skips the next one", b);
+  snprintf(f.until, sizeof f.until, "2026-12-28");
+  fobPauseWords(f, b, sizeof b);
+  TEST_ASSERT_EQUAL_STRING("Paused until 2026-12-28", b);
+  TEST_ASSERT_FALSE(parseFob("{\"battery\":1}", 13, f));
+  TEST_ASSERT_EQUAL(87, f.battery);
+}
+
 void test_share_password() {
   uint8_t r[10] = {0, 1, 2, 3, 4, 250, 251, 252, 253, 254};
   char p[11];
@@ -668,5 +695,6 @@ int main() {
   RUN_TEST(test_atlas_sync_helpers);
   RUN_TEST(test_titan_glance);
   RUN_TEST(test_atlas_power_source);
+  RUN_TEST(test_fob_status);
   return UNITY_END();
 }

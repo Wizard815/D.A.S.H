@@ -2,7 +2,8 @@
 // Atlas's brain (truckd on a Pi) sends dash-mod frames over MQTT on the
 // truck Wi-Fi, and over ESP-NOW through its ESP32-C3 bridge (or any ESP
 // peer). Shows OBD2 gauges, check-engine codes in plain words, sync,
-// weather, the brain's battery and GPS. Read-only.
+// weather, the brain's battery and GPS. The Fob page (remote start, lock,
+// unlock, skip and pause) goes over truckd's HTTP API with an owner token.
 // Protocol: docs/mods/atlas-protocol.md. Setup: docs/mods/atlas.md.
 #pragma once
 #include <PubSubClient.h>
@@ -10,6 +11,7 @@
 
 #include "atlas.h"
 #include "backoff.h"
+#include "fob.h"
 #include "mod.h"
 #include "view.h"
 
@@ -37,6 +39,7 @@ class AtlasMod : public dash::Mod, public dash::ModView {
   bool dirty(uint32_t nowMs) override;
   void draw(uint32_t nowMs, bool full) override;
   void tap(int x, int y, uint32_t nowMs) override;
+  void closed() override { open_ = false; }
 
   const dash::AtlasState& data() const { return st_; }
 
@@ -53,6 +56,14 @@ class AtlasMod : public dash::Mod, public dash::ModView {
   void drawGauges(uint32_t now, bool full);
   void drawCodes(uint32_t now);
   void drawTrip(uint32_t now);
+  // Fob page: truckd's HTTP API with the owner token (never ESP-NOW frames,
+  // so a spoofed frame can't start the truck).
+  bool fobReachable() const;
+  int fobHttp(const char* method, const char* path, const String& body, String* reply);
+  void fobFetch(uint32_t now);
+  void fobCommand(const char* c, uint32_t now);
+  void fobPause(const char* body, uint32_t now);
+  void drawFob(uint32_t now);
 
   static void onMqtt(char* topic, uint8_t* payload, unsigned int len);
   static AtlasMod* self_;
@@ -71,4 +82,9 @@ class AtlasMod : public dash::Mod, public dash::ModView {
   uint8_t page_ = 0, codePage_ = 0;
   uint32_t drawnRev_ = UINT32_MAX, drawnTick_ = 0;
   bool drawnLive_ = false;
+  bool open_ = false;
+  dash::FobStatus fob_;
+  bool fobHave_ = false;
+  uint32_t fobNext_ = 0, armUntil_ = 0, fobRev_ = 0, drawnFobRev_ = UINT32_MAX;
+  char fobMsg_[64] = "";
 };
