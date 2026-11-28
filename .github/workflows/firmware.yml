@@ -1,9 +1,9 @@
 name: firmware
 on:
   push:
-    paths: ["firmware/**", ".github/workflows/firmware.yml"]
+    paths: ["firmware/**", "bridge/**", "tools/**", ".github/workflows/firmware.yml"]
   pull_request:
-    paths: ["firmware/**", ".github/workflows/firmware.yml"]
+    paths: ["firmware/**", "bridge/**", "tools/**", ".github/workflows/firmware.yml"]
 jobs:
   build:
     runs-on: ubuntu-24.04
@@ -18,9 +18,15 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: ~/.platformio
-          key: pio-${{ hashFiles('firmware/platformio.ini') }}
+          key: pio-${{ hashFiles('firmware/platformio.ini', 'bridge/platformio.ini') }}
       - run: pip install platformio==6.1.18
       - name: Unit tests (host)
         run: pio test -e native
       - name: Build for the board
         run: pio run -e freenove_40
+      - name: Build the Atlas bridge (ESP32-C3)
+        working-directory: bridge
+        run: pio run
+      - name: Check the Atlas simulator script
+        working-directory: tools
+        run: bash -n atlas-sim.sh && bash -n atlas-sign.sh

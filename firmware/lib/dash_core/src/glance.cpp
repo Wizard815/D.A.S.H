@@ -65,6 +65,7 @@ bool parseGlance(const char* json, size_t len, Glance& out) {
     asciiCopy(gp.name, sizeof gp.name, p["name"] | "");
     gp.needsYou = p["needs_you"] | 0;
     gp.working = p["working"] | 0;
+    gp.review = p["review"] | 0;
     gp.first = out.nThreads;
     for (JsonObjectConst t : p["threads"].as<JsonArrayConst>()) {
       if (out.nThreads >= Glance::kThreads) break;
@@ -73,23 +74,38 @@ bool parseGlance(const char* json, size_t len, Glance& out) {
       asciiCopy(gt.title, sizeof gt.title, t["title"] | "");
       asciiCopy(gt.status, sizeof gt.status, t["status"] | "");
       asciiCopy(gt.last, sizeof gt.last, t["last"] | "");
+      asciiCopy(gt.stage, sizeof gt.stage, t["stage"] | "");
+      gt.throwaway = t["throwaway"] | false;
       gt.project = out.nProjects;
       out.nThreads++;
       gp.count++;
     }
     out.needsYou += gp.needsYou;
     out.working += gp.working;
+    out.review += gp.review;
     out.nProjects++;
   }
   return true;
 }
 
+const char* threadWords(const GlanceThread& t) {
+  if (!strcmp(t.stage, "review")) return "Ready for review";
+  return threadStatusText(t.status);
+}
+
 void glanceSummary(const Glance& g, char* buf, size_t n) {
   if (!n) return;
-  if (g.needsYou && g.working) snprintf(buf, n, "%u need%s you, %u working", g.needsYou, g.needsYou == 1 ? "s" : "", g.working);
-  else if (g.needsYou) snprintf(buf, n, "%u need%s you", g.needsYou, g.needsYou == 1 ? "s" : "");
-  else if (g.working) snprintf(buf, n, "%u working", g.working);
-  else snprintf(buf, n, "Nothing going on");
+  buf[0] = 0;
+  size_t o = 0;
+  auto add = [&](const char* fmt, unsigned v, const char* s) {
+    if (o >= n) return;
+    int w = snprintf(buf + o, n - o, fmt, o ? ", " : "", v, s);
+    if (w > 0) o += (size_t)w;
+  };
+  if (g.needsYou) add("%s%u need%s you", g.needsYou, g.needsYou == 1 ? "s" : "");
+  if (g.working) add("%s%u working%s", g.working, "");
+  if (g.review) add("%s%u to review%s", g.review, "");
+  if (!o) snprintf(buf, n, "Nothing going on");
 }
 
 int glanceRows(const Glance& g, GlanceRow* rows, int max) {

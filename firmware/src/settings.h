@@ -14,4 +14,8 @@ void saveTouchCalibration(const uint16_t cal[5]);
 bool linkEnabled(const char* name, bool fallback = true);
 void setLinkEnabled(const char* name, bool on);
 
+// A mod's setting (an option index), by mod id and setting key.
+uint8_t modValue(const char* mod, const char* key, uint8_t fallback);
+void setModValue(const char* mod, const char* key, uint8_t value);
+
 }  // namespace settings

@@ -12,6 +12,8 @@ struct GlanceThread {
   char id[40];
   char title[36];
   char status[10];  // working, done, waiting, failed
+  char stage[10];   // working, needs_you, review, done (newer FAITH; may be empty)
+  bool throwaway;   // a private thread: FAITH sends only "Throwaway thread"
   char last[64];
   uint8_t project;  // index into Glance::projects
 };
@@ -19,7 +21,7 @@ struct GlanceThread {
 struct GlanceProject {
   char id[40];
   char name[36];  // "Sam", "Family", "Parents"
-  uint8_t needsYou, working;
+  uint8_t needsYou, working, review;
   uint8_t first, count;  // its threads in Glance::threads
 };
 
@@ -28,7 +30,7 @@ struct Glance {
   GlanceProject projects[kProjects];
   GlanceThread threads[kThreads];
   uint8_t nProjects = 0, nThreads = 0;
-  uint16_t needsYou = 0, working = 0;
+  uint16_t needsYou = 0, working = 0, review = 0;
 };
 
 // Fills `out` from the JSON body. False (and `out` emptied) on anything that
@@ -39,8 +41,11 @@ bool parseGlance(const char* json, size_t len, Glance& out);
 const char* threadStatusText(const char* status);
 // waiting or failed: the person should look.
 bool threadNeedsYou(const char* status);
+// Words for a thread: its stage when FAITH sends one ("Ready for review"),
+// else its status.
+const char* threadWords(const GlanceThread& t);
 
-// "1 needs you, 2 working", or "Nothing going on".
+// "1 needs you, 2 working, 1 to review", or "Nothing going on".
 void glanceSummary(const Glance& g, char* buf, size_t n);
 
 // The list screen's rows: a heading per project, then its threads.

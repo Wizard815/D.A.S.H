@@ -48,3 +48,9 @@ Subscribe over Socket.IO to `mcu.events.subscribe`; events include
 `chat.run.*`, `chat.tool.*`, `chat.approval.requested`,
 `chat.clarification.requested`. Studio does not yet accept approve/deny from the
 device; that needs a small server addition (see roadmap).
+
+## Atlas (truck homelab, a mod)
+truckd on the truck's Pi sends dash-mod frames: MQTT `dash/v1/atlas/<type>` on
+the truck Wi-Fi, and ESP-NOW through an ESP32-C3 bridge on the Pi's UART.
+Setup and wiring: [mods/atlas.md](mods/atlas.md). Format:
+[mods/atlas-protocol.md](mods/atlas-protocol.md).

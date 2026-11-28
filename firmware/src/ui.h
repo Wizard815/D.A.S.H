@@ -4,15 +4,18 @@
 
 #include "connector.h"
 
-class ProjectsLink;
+class FilesLink;
+namespace dash {
+class ModList;
+}
 
 namespace ui {
 
-// The first four are the tabs, in order.
-enum class Screen : uint8_t { Home, Projects, Links, Device, Talk, kCount };
+// Tabs: Home, Files, mods (FAITH, Atlas; or a Mods list), Links. Device and
+// a mod's settings open from Links.
+enum class Screen : uint8_t { Home, Files, Mod, Mods, Links, Device, ModSettings, Talk, kCount };
 
-// `projects` may be null (no FAITH token).
-void begin(dash::Registry* links, ProjectsLink* projects);
+void begin(dash::Registry* links, FilesLink* files, dash::ModList* mods);
 // Runs the touch calibration screen and saves the result.
 void calibrateTouch();
 void loop(uint32_t nowMs);

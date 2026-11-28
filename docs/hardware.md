@@ -56,19 +56,24 @@ charger board. To check before connecting the 18500 cell:
 
 ## Plan for the add-ons
 
+The microSD slot stays in use (Files), so the knob, side buttons and motor
+go on an **MCP23017** I/O expander (about $2) on the free I2C port.
+
 | Part | Pins | Why |
 | --- | --- | --- |
-| IMU (I2C) | SDA IO32, SCL IO25 | the free I2C port with 3.3V and GND |
+| microSD (Files) | SCK 18, MISO 19, MOSI 23, CS 5 | the built-in TF slot on VSPI |
+| MCP23017 expander | SDA IO32, SCL IO25, address 0x20, INTA to IO35 (10k pull-up) | frees the SD pins; one interrupt line for all inputs |
+| IMU (I2C) | SDA IO32, SCL IO25 | same bus as the expander |
 | INMP441 mic | BCLK IO21, WS IO22, DIN IO39 | I2S1; the speaker DAC uses I2S0. DIN is an input, so an input-only pin works. Gives up the red LED. |
-| Rotary encoder | A IO16, B IO17, click IO35 | gives up green/blue LED. IO35 needs an external 10k pull-up to 3.3V |
-| Side button A (push-to-talk) | IO36 | input only, needs a 10k pull-up. Touch IRQ is not needed because TFT_eSPI polls. |
-| Side button B (cancel) | IO0 (BOOT key) for dev, later IO5 | |
-| Vibration motor | IO23 via N-MOSFET + flyback diode | gives up the TF slot. Power from the battery side, not 5 V |
+| Rotary encoder | expander GPA0 (A), GPA1 (B), GPA2 (click) | internal pull-ups on the expander |
+| Side button A (push-to-talk) | expander GPA3 | internal pull-up |
+| Side button B (cancel) | expander GPA4; IO0 (BOOT key) until then | |
+| Vibration motor | expander GPB0 via N-MOSFET + flyback diode | power from the battery side, not 5 V |
 | Slider as volume (optional) | IO39 | ADC1; conflicts with the mic DIN, so choose one |
 
-This plan gives up the TF card slot and the RGB LED. If you want to keep the SD,
-add an MCP23017 I2C expander on the I2C port and move the encoder, buttons and
-motor there.
+The green and blue LED pins (IO16, IO17) stay free with this plan. The
+expander driver lands with the inputs milestone (M3); until then the firmware
+keeps the BOOT key and the optional IO36 button.
 
 Rules: use only ADC1 pins (32-39) for analog reads, because ADC2 stops working
 with Wi-Fi on. Pins 34-39 are input only and have no pull-ups. Not yet verified

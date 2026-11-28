@@ -1,21 +1,23 @@
-// D.A.S.H firmware, milestone M1: screen, touch, Wi-Fi, battery, buttons,
-// and the connector registry with a first link (FAITH health), plus FAITH's
-// family projects (read-only).
+// D.A.S.H firmware: screen, touch, Wi-Fi, battery, buttons, the links
+// registry, Files on the microSD card with a Wi-Fi share, and mods (FAITH
+// with the family's projects; Atlas, the truck homelab).
 #include <Arduino.h>
 
+#include "ble_reports.h"
 #include "config.h"
 #include "connector.h"
-#include "faith_link.h"
+#include "files_link.h"
 #include "hw.h"
+#include "mod.h"
+#include "mods/mods.h"
 #include "net.h"
-#include "projects_link.h"
 #include "settings.h"
 #include "ui.h"
 
 namespace {
 dash::Registry links;
-FaithLink faith(DASH_FAITH_URL);
-ProjectsLink projects(DASH_FAITH_URL, DASH_FAITH_TOKEN);
+dash::ModList modList;
+FilesLink files;
 
 constexpr uint32_t kDimAfterMs = 60000;
 constexpr uint8_t kBright = 255, kDim = 24;
@@ -38,14 +40,14 @@ void setup() {
   settings::begin();
   hw::sampleBattery();
 
-  faith.enabled = settings::linkEnabled(faith.name(), true);
-  links.add(&faith);
-  projects.enabled = settings::linkEnabled(projects.name(), true);
-  links.add(&projects);
+  files.enabled = settings::linkEnabled(files.name(), true);
+  links.add(&files);
+  mods::addAll(modList, links);
 
-  ui::begin(&links, &projects);  // may run touch calibration first
+  ui::begin(&links, &files, &modList);  // may run touch calibration first
   net::begin();
   links.begin();
+  ble_reports::begin();  // after Wi-Fi: both share the radio (coexistence)
   ui::noteActivity(millis());
 }
 
@@ -65,7 +67,10 @@ void loop() {
   }
 
   net::loop(now);
+  hw::loop(now);
+  mods::pump(modList, now);
   links.loop(now, net::up());
+  ble_reports::loop(now);
 
   uint32_t before = ui::lastActivity();
   ui::loop(now);

@@ -42,7 +42,7 @@ void Registry::loop(uint32_t now, bool netUp) {
 int Registry::problems() const {
   int p = 0;
   for (int i = 0; i < n_; i++)
-    if (list_[i]->enabled && list_[i]->state() != LinkState::Up) p++;
+    if (list_[i]->enabled && list_[i]->problem()) p++;
   return p;
 }
 

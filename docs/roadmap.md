@@ -12,3 +12,8 @@
 7. **M6 FAITH**: pair as a hub screen, PIN sign-in, confirms, voice fallback
    (see [integrations](integrations.md#faith)).
 8. **M7 Phone BLE setup**, OTA, enclosure.
+
+Alongside: **Files** on the microSD card with a Wi-Fi share, and **mods**,
+starting with **Atlas** (the truck). Written and building, not flashed. Next
+mods: Home Assistant, Overseer, Argos. Owner delete for Files comes with
+phone setup (M7).

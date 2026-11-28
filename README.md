@@ -13,7 +13,23 @@ touchscreen. Formerly called PocketAgent.
 | **Pondering Orb** | tasks, today, chores, projects glance; mark done | HTTPS REST + token from `ORB_API_TOKENS` |
 | **Hermes Studio** | live agent activity (runs, tools, approvals) | Socket.IO `/global-agent`, `mcu.events.subscribe` |
 
+| **Atlas** (truck homelab, a mod) | OBD2 gauges, check-engine codes in words, sync, weather | ESP-NOW and MQTT on the truck Wi-Fi ([docs/mods/atlas.md](docs/mods/atlas.md)) |
+| **T.I.T.A.N** (homelab status, a mod) | what's up, what's down and why | `GET /api/glance` with a read-only token ([docs/mods/titan.md](docs/mods/titan.md)) |
+| **Home Assistant** (a mod) | a few entities, alerts on the light and motor, optional toggles | REST `GET /api/states/<id>` with a long-lived token ([docs/mods/ha.md](docs/mods/ha.md)) |
+
 Every connector is optional and has its own on/off switch in device settings.
+
+**Files:** DASH keeps files on its microSD card and shares them over its own
+Wi-Fi with a QR code: people nearby view, download and upload from a browser,
+and only you can delete ([docs/files.md](docs/files.md)).
+
+**Phone:** DASH sends Atlas alerts, each mod's summary and its battery to
+the paired DASH phone app over Bluetooth, no Wi-Fi needed
+([docs/ble-reports.md](docs/ble-reports.md)).
+
+**Mods** add integrations for other apps and devices, each with its own
+screen, settings and Home card ([docs/mods/README.md](docs/mods/README.md)).
+The first is Atlas, the truck homelab.
 
 ## Hardware (v0)
 
@@ -36,3 +52,7 @@ tested on hardware yet. See [firmware/README.md](firmware/README.md),
 - [Integrations](docs/integrations.md)
 - [Roadmap](docs/roadmap.md)
 - [Open questions](docs/open-questions.md)
+- [Files](docs/files.md)
+- [Mods](docs/mods/README.md), [Atlas](docs/mods/atlas.md), [Atlas protocol](docs/mods/atlas-protocol.md), [T.I.T.A.N](docs/mods/titan.md), [Home Assistant](docs/mods/ha.md)
+- [Bluetooth live reports](docs/ble-reports.md) (to the phone, paired with a passkey)
+- [Phone app](docs/app/README.md), [gateway API](docs/app/gateway-api.md)

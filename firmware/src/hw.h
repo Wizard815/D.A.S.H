@@ -2,6 +2,7 @@
 #pragma once
 #include <stdint.h>
 
+#include "atlas.h"  // AlertSignal
 #include "button.h"
 
 namespace hw {
@@ -23,6 +24,11 @@ uint32_t batteryMv();
 void setBacklight(uint8_t level);
 
 enum class Led : uint8_t { Off, Ok, Busy, Problem };
-void setLed(Led l);
+void setLed(Led l);  // the everyday status; an alert takes over the light while it runs
+
+// An alert on the light and the vibration motor (docs/mods/atlas-protocol.md).
+// A signal with no colour and no buzz stops it. Runs from hw::loop.
+void alert(const dash::AlertSignal& s);
+void loop(uint32_t nowMs);
 
 }  // namespace hw
