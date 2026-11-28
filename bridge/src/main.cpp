@@ -49,6 +49,9 @@
 #ifndef BRIDGE_BLE_LISTEN_MS
 #define BRIDGE_BLE_LISTEN_MS 1500
 #endif
+#ifndef BRIDGE_FOB_MAC
+#define BRIDGE_FOB_MAC ""
+#endif
 #ifndef BRIDGE_LTE_SYNC_EVERY_H
 #define BRIDGE_LTE_SYNC_EVERY_H 0
 #endif
@@ -82,25 +85,41 @@ const uint8_t kBroadcast[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 // ESP-NOW receive queue (the callback runs in the Wi-Fi task).
 struct Slot {
   uint8_t len;
+  bool fob;  // from the fob module (else DASH)
   char data[kFrameMax + 1];
 };
 Slot ring[8];
 volatile int head = 0, tail = 0;
 portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
 
+uint8_t fobMac[6];
+bool haveFob = false;
+
 void onRecv(const uint8_t* mac, const uint8_t* data, int len) {
   if (len <= 0 || len > (int)kFrameMax) return;
-  if (haveDash && memcmp(mac, dashMac, 6) != 0) return;  // only DASH
+  bool fob = haveFob && memcmp(mac, fobMac, 6) == 0;
+  if (!fob && haveDash && memcmp(mac, dashMac, 6) != 0) return;  // only DASH and the fob module
   portENTER_CRITICAL(&mux);
   int next = (head + 1) % 8;
   if (next != tail) {
     memcpy(ring[head].data, data, len);
     ring[head].data[len] = 0;
     ring[head].len = len;
+    ring[head].fob = fob;
     head = next;
   }
   portEXIT_CRITICAL(&mux);
 }
+
+// truckd's frames for the fob module wait here for its next poll (it sleeps
+// between polls, every 10 s parked). Kept 30 s, like the commands' expiry.
+struct FobOut {
+  char data[kFrameMax + 1];
+  uint8_t len;
+  uint32_t atMs;
+};
+FobOut fobOut[4];
+int nFobOut = 0;
 
 bool parseMac(const char* t, uint8_t out[6]) {
   unsigned v[6];
@@ -370,6 +389,19 @@ void fromPi(char* line, size_t len) {
     handleOwn(doc);
     return;
   }
+  // Module-protocol frames for the fob module ("id":"fob") wait for its poll.
+  if (!strcmp(doc["id"] | "", "fob")) {
+    if (!haveFob || len > kFrameMax) return;
+    if (nFobOut == 4) {  // full: drop the oldest
+      memmove(fobOut, fobOut + 1, 3 * sizeof(FobOut));
+      nFobOut = 3;
+    }
+    memcpy(fobOut[nFobOut].data, line, len);
+    fobOut[nFobOut].len = len;
+    fobOut[nFobOut].atMs = millis();
+    nFobOut++;
+    return;
+  }
   // truckd's clock: lets the bridge check a start's expiry while the Pi is off.
   long long ts = doc["ts"] | 0LL;
   if (ts > 1700000000LL) {
@@ -416,6 +448,16 @@ void bridgeMode() {
     memcpy(p.peer_addr, kBroadcast, 6);  // broadcast can't be encrypted
   }
   esp_now_add_peer(&p);
+  haveFob = parseMac(BRIDGE_FOB_MAC, fobMac);
+  if (haveFob) {
+    esp_now_peer_info_t f = {};
+    f.channel = BRIDGE_CHANNEL;
+    f.ifidx = WIFI_IF_STA;
+    memcpy(f.peer_addr, fobMac, 6);
+    f.encrypt = encrypt;
+    if (encrypt) memcpy(f.lmk, key, 16);
+    esp_now_add_peer(&f);
+  }
   Serial.printf("bridge: MAC %s, channel %d, DASH %s\n", WiFi.macAddress().c_str(), BRIDGE_CHANNEL, haveDash ? BRIDGE_DASH_MAC : "any (broadcast)");
   char hi[96];
   snprintf(hi, sizeof hi, "{\"m\":\"bridge\",\"t\":\"hi\",\"mac\":\"%s\"}", WiFi.macAddress().c_str());
@@ -453,6 +495,20 @@ void bridgeMode() {
       }
       portEXIT_CRITICAL(&mux);
       if (!got) break;
+      bool poll = false;
+      if (s.fob) {
+        JsonDocument d;
+        poll = !deserializeJson(d, s.data, s.len) && !strcmp(d["kind"] | "", "poll");
+      }
+      if (poll) {
+        // The fob module is awake for a moment: hand it what's waiting.
+        // Polls aren't passed to truckd (one every 10 s).
+        uint32_t now = millis();
+        for (int i = 0; i < nFobOut; i++)
+          if (now - fobOut[i].atMs < 30000) esp_now_send(fobMac, (const uint8_t*)fobOut[i].data, fobOut[i].len);
+        nFobOut = 0;
+        continue;
+      }
       sendLine(s.data);
     }
     // The Pi turned off: switch to scan mode.

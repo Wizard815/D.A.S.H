@@ -82,6 +82,22 @@ home Wi-Fi names, then `cd bridge && pio run -t upload`.
   average instead of 10 uA (measure yours). Use a C3 board with an antenna
   connector and put the antenna on a window.
 
+### The fob module
+
+Remote start, lock and unlock live in their own Atlas mod, the fob module
+([A.T.L.A.S modules/fob](https://github.com/Wizard815/A.T.L.A.S/blob/main/modules/fob/README.md)),
+which talks only to the bridge over ESP-NOW. Set `BRIDGE_FOB_MAC`; it uses the
+same ESP-NOW key as DASH.
+
+- While the Pi is on, everything the fob module sends goes to truckd on the
+  UART as one line (module protocol, `"id":"fob"`), except its polls.
+- truckd's lines with `"id":"fob"` wait in the bridge (up to 4, 30 s each).
+  The fob module wakes every 10 s and sends `{"v":1,"id":"fob","kind":"poll",...}`;
+  the bridge answers at once with whatever is waiting. The fob module should
+  listen about 50 ms after a poll.
+- With the Pi off the bridge's ESP-NOW is off, so polls get no answer and the
+  fob module runs its own schedule.
+
 ### Remote start over Bluetooth
 
 For the DASH phone app near the truck while the Pi is off
@@ -103,7 +119,8 @@ For the DASH phone app near the truck while the Pi is off
    and, when the Pi is up, sends truckd
    `{"m":"bridge","t":"cmd","c":"remote_start","nonce":...,"exp":...,"sig":...,"via":"ble"}`.
    truckd checks it again and does the fob press and safety checks; the result
-   comes back as a `cmd` frame. A start the Pi never wakes for is dropped
+   comes back as a `cmd` frame. truckd hands the start to the fob module. A
+   start the Pi never wakes for is dropped
    after 5 minutes.
 
 truckd hands the phone the start key at pairing (`start_key` from

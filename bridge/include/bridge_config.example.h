@@ -4,6 +4,9 @@
 // DASH's MAC (Links > Device info on DASH). Empty: send to everyone in
 // range (broadcast, not encrypted).
 #define BRIDGE_DASH_MAC ""
+// The fob module's MAC (an Atlas mod with its own battery, A.T.L.A.S
+// modules/fob). Empty: no fob module. It uses the same ESP-NOW key.
+#define BRIDGE_FOB_MAC ""
 // 16 characters, the same as DASH_ESPNOW_KEY on DASH. Empty: not encrypted.
 #define BRIDGE_ESPNOW_KEY ""
 // The truck network's channel (hostapd on the Pi is pinned to 6).
