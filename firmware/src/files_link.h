@@ -48,7 +48,6 @@ class FilesLink : public dash::Connector, public dash::ModView {
   enum class Mode : uint8_t { Main, Qr, Viewer };
   bool mount();
   void scan();  // counts files, space and pictures; slow on big cards, so only on change
-  void drawQr(const char* text, int x, int y, int maxPx);
   void updateDetail();
   void drawMain();
   void drawQrScreen();

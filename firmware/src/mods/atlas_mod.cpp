@@ -6,11 +6,13 @@
 #include <math.h>
 #include <time.h>
 
+#include "ble_reports.h"
 #include "config.h"
 #include "espnow_bus.h"
 #include "gfx.h"
 #include "hw.h"
 #include "net.h"
+#include "share.h"
 
 using namespace gfx;
 
@@ -26,6 +28,9 @@ constexpr int kBodyY = kTop + 104;
 constexpr int kCodesPerPage = 3;
 constexpr int kFobBtnW = (W - 24 - 8) / 2, kFobBtnH = 44, kFobBtnY = kBodyY + 132;
 constexpr uint32_t kFobEveryMs = 30000;
+// The QR button sits right of the "Atlas" heading.
+constexpr int kQrBtnX = 96, kQrBtnY = kTop + 2, kQrBtnW = 56, kQrBtnH = 44;
+constexpr int kQrSide = 220, kQrY = kTop + 52;
 }  // namespace
 
 AtlasMod* AtlasMod::self_ = nullptr;
@@ -63,6 +68,12 @@ void AtlasMod::loop(uint32_t now, bool netUp) {
   // only: MQTT has the retained frames).
   if (useEspNow() && espnowOk_ && !dash::atlasLive(st_, now) && now - lastReq_ >= kReqEveryMs) request(now);
   updateDetail(now);
+  if (now - lastSum_ >= 1000) {  // the phone gets it when it changes (at most every 10 s)
+    lastSum_ = now;
+    char line[96];
+    dash::atlasSummary(st_, now, unixNow(now), units(), line, sizeof line, nullptr);
+    ble_reports::summary(id(), line);
+  }
   if (open_ && page_ == 3 && fobReachable() && (int32_t)(now - fobNext_) >= 0) fobFetch(now);
 }
 
@@ -114,6 +125,7 @@ void AtlasMod::onFrame(const char* json, size_t len, dash::Via via, uint32_t now
     // A new alert buzzes and lights; a cleared one stops.
     hw::alert(dash::alertSignal(st_.alertLvl && !st_.alertSeen ? st_.alertLvl : 0));
   }
+  if (f == dash::AtlasFrame::Alert) ble_reports::atlasAlert(json, len, st_);  // to the phone at once
   if (f != dash::AtlasFrame::Bad) lastVia_ = via;
 }
 
@@ -162,11 +174,13 @@ void AtlasMod::opened() {
   }
   page_ = 0;
   codePage_ = 0;
+  qr_ = 0;
   drawnRev_ = UINT32_MAX;
   request(millis());
 }
 
 bool AtlasMod::dirty(uint32_t now) {
+  if (qr_) return !qrDrawn_;
   bool live = dash::atlasLive(st_, now);
   if (st_.rev != drawnRev_ || live != drawnLive_) return true;
   if (page_ == 3 && fobRev_ != drawnFobRev_) return true;
@@ -182,23 +196,30 @@ bool AtlasMod::dirty(uint32_t now) {
 void AtlasMod::drawHeader(uint32_t now) {
   tft.fillRect(0, kTop, W, 48, BG);
   heading("Atlas");
+  button("QR", kQrBtnX, kQrBtnY, kQrBtnW, kQrBtnH, false);
   char w[72];
+  constexpr int kStatusW = W - 16 - (kQrBtnX + kQrBtnW + 8);
+  auto status = [&](uint16_t colour) {
+    char cut[72];
+    fit(cut, sizeof cut, w, 2, kStatusW);
+    text(cut, W - 16, kTop + 20, 2, colour, TR_DATUM);
+  };
   bool live = dash::atlasLive(st_, now);
   // An alert says so here until it's cleared.
   if (st_.alertLvl) {
     snprintf(w, sizeof w, "%s%s", dash::alertKindWords(st_.alertK), st_.alertSnap ? ": photo in app" : "");
-    text(w, W - 16, kTop + 20, 2, st_.alertLvl >= 3 ? BAD : GOLD, TR_DATUM);
+    status(st_.alertLvl >= 3 ? BAD : GOLD);
     return;
   }
   // A remote start (or other owner command) in the last 2 minutes says so here.
   if (st_.cmdAtMs && now - st_.cmdAtMs < 120000) {
     snprintf(w, sizeof w, "%s", st_.cmdMsg[0] ? st_.cmdMsg : st_.cmdOk ? "Command done" : "Command failed");
-    text(w, W - 16, kTop + 20, 2, st_.cmdOk ? GOOD : BAD, TR_DATUM);
+    status(st_.cmdOk ? GOOD : BAD);
     return;
   }
   if (live) snprintf(w, sizeof w, "Live, %s%s", dash::viaText(lastVia_), st_.ign ? ", running" : "");
   else dash::atlasLinkWords(st_, now, w, sizeof w);
-  text(w, W - 16, kTop + 20, 2, live ? GOOD : st_.asleep ? MUTED : GOLD, TR_DATUM);
+  status(live ? GOOD : st_.asleep ? MUTED : GOLD);
 }
 
 namespace {
@@ -356,6 +377,10 @@ void AtlasMod::drawTrip(uint32_t now) {
 }
 
 void AtlasMod::draw(uint32_t now, bool full) {
+  if (qr_) {
+    drawQr();
+    return;
+  }
   bool live = dash::atlasLive(st_, now);
   bool dataChanged = full || st_.rev != drawnRev_ || live != drawnLive_ || (page_ == 3 && fobRev_ != drawnFobRev_);
   drawnTick_ = now;
@@ -371,6 +396,23 @@ void AtlasMod::draw(uint32_t now, bool full) {
 }
 
 void AtlasMod::tap(int x, int y, uint32_t now) {
+  if (qr_) {
+    if (y >= kNavY) {  // Close
+      qr_ = 0;
+      drawnRev_ = UINT32_MAX;
+      clearContent();
+      draw(now, true);
+    } else if (y >= kQrY && y < kNavY) {  // the code (or the words under it): the other one
+      qr_ = qr_ == 1 ? 2 : 1;
+      qrDrawn_ = false;
+    }
+    return;
+  }
+  if (hit(x, y, kQrBtnX - 4, kTop, kQrBtnW + 8, 48)) {
+    qr_ = 1;
+    qrDrawn_ = false;
+    return;
+  }
   if (y >= kTop + 50 && y < kTop + 94) {
     page_ = segmentAt(x, kNPages);
     if (page_ == 3) fobNext_ = now;  // fetch on the next loop
@@ -544,4 +586,51 @@ void AtlasMod::drawFob(uint32_t now) {
     text(cut, 16, kFobBtnY + 3 * (kFobBtnH + 6), 2, GOLD);
   }
   (void)now;
+}
+
+// ---------- QR screen ----------
+void AtlasMod::shareUrl(char* buf, size_t n) const {
+  // The share's host: set, else the truck router (the Pi) when on the truck
+  // Wi-Fi, else its mDNS name.
+  if (*DASH_ATLAS_SHARE_HOST) snprintf(buf, n, "http://%s:%u/", DASH_ATLAS_SHARE_HOST, (unsigned)DASH_ATLAS_SHARE_PORT);
+  else if (net::onAtlasWifi() && net::gateway())
+    snprintf(buf, n, "http://%s:%u/", IPAddress(net::gateway()).toString().c_str(), (unsigned)DASH_ATLAS_SHARE_PORT);
+  else snprintf(buf, n, "http://atlas.local:%u/", (unsigned)DASH_ATLAS_SHARE_PORT);
+}
+
+void AtlasMod::drawQr() {
+  qrDrawn_ = true;
+  clearContent();
+  heading(qr_ == 1 ? "Truck Wi-Fi" : "Truck Share");
+  text(qr_ == 1 ? "1 of 2" : "2 of 2", W - 16, kTop + 20, 2, MUTED, TR_DATUM);
+  char code[256], a[96];  // a 32-byte name and 63-byte password, all escaped, fit
+  int y = kQrY;
+  if (qr_ == 1) {
+    if (!*DASH_ATLAS_WIFI_SSID) {
+      wrap("No truck Wi-Fi is set. Put its name and password in DASH_ATLAS_WIFI_SSID and DASH_ATLAS_WIFI_PASS in "
+           "firmware/include/secrets.h, then build and flash DASH again.",
+           16, y + 8, W - 32, 2, TEXT, BG, 6);
+      wrap("Tap here for the Truck Share's address.", 16, y + 150, W - 32, 2, MUTED, BG, 2);
+    } else {
+      dash::wifiJoinCode(DASH_ATLAS_WIFI_SSID, DASH_ATLAS_WIFI_PASS, code, sizeof code);
+      int side = qr(code, (W - kQrSide) / 2, y, kQrSide);
+      if (!side) {
+        wrap("The name and password are too long for a QR code. Join the truck Wi-Fi by hand.", 16, y + 8, W - 32, 2, TEXT, BG, 4);
+        side = 100;
+      }
+      snprintf(a, sizeof a, "Network: %s", DASH_ATLAS_WIFI_SSID);
+      char cut[96];
+      fit(cut, sizeof cut, a, 2, W - 32);
+      text(cut, W / 2, y + side + 6, 2, TEXT, TC_DATUM);
+      text("Scan to join. Tap the code for the Share.", W / 2, y + side + 28, 2, MUTED, TC_DATUM);
+    }
+  } else {
+    shareUrl(code, sizeof code);
+    int side = qr(code, (W - kQrSide) / 2, y, kQrSide);
+    char cut[96];
+    fit(cut, sizeof cut, code, 2, W - 32);
+    text(cut, W / 2, y + side + 6, 2, TEXT, TC_DATUM);
+    text("Join the truck Wi-Fi first. Tap for Wi-Fi.", W / 2, y + side + 28, 2, MUTED, TC_DATUM);
+  }
+  navButton("Close", W - 12 - 128, 128, true);
 }

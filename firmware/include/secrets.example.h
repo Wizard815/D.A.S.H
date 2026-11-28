@@ -26,6 +26,7 @@
 // ---- Atlas (the truck homelab mod). All optional: leave empty to skip. ----
 // Atlas's truck Wi-Fi. DASH tries home first, then this, so in the truck it
 // joins Atlas by itself. The MQTT broker is then the truck network's router.
+// The Atlas tab's QR button shows these as a join code for phones.
 #define DASH_ATLAS_WIFI_SSID ""
 #define DASH_ATLAS_WIFI_PASS ""
 // Set only if the broker isn't the truck router (for example 192.168.50.2).
@@ -36,6 +37,9 @@
 // to copyparty on the Pi (folder /dash), where phones get the fuller viewer.
 // The password of copyparty's "dash" account (write only); empty: no sync.
 #define DASH_ATLAS_SHARE_PW ""
+// The Truck Share's address for the Atlas QR button (copyparty, port 3923).
+// Empty: the truck router (the Pi) while on the truck Wi-Fi, else atlas.local.
+#define DASH_ATLAS_SHARE_HOST ""
 // Fob page (remote start, lock, unlock, schedule): a truckd owner token.
 // Pair DASH like a phone (press the box's button, then POST /api/pair) and
 // paste the "atl_..." token here. Empty: no Fob page controls.

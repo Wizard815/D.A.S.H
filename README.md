@@ -23,6 +23,10 @@ Every connector is optional and has its own on/off switch in device settings.
 Wi-Fi with a QR code: people nearby view, download and upload from a browser,
 and only you can delete ([docs/files.md](docs/files.md)).
 
+**Phone:** DASH sends Atlas alerts, each mod's summary and its battery to
+the paired DASH phone app over Bluetooth, no Wi-Fi needed
+([docs/ble-reports.md](docs/ble-reports.md)).
+
 **Mods** add integrations for other apps and devices, each with its own
 screen, settings and Home card ([docs/mods/README.md](docs/mods/README.md)).
 The first is Atlas, the truck homelab.
@@ -50,3 +54,4 @@ tested on hardware yet. See [firmware/README.md](firmware/README.md),
 - [Open questions](docs/open-questions.md)
 - [Files](docs/files.md)
 - [Mods](docs/mods/README.md), [Atlas](docs/mods/atlas.md), [Atlas protocol](docs/mods/atlas-protocol.md), [T.I.T.A.N](docs/mods/titan.md), [Home Assistant](docs/mods/ha.md)
+- [Bluetooth live reports](docs/ble-reports.md) (to the phone, paired with a passkey)

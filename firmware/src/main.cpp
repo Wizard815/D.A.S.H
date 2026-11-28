@@ -3,6 +3,7 @@
 // with the family's projects; Atlas, the truck homelab).
 #include <Arduino.h>
 
+#include "ble_reports.h"
 #include "config.h"
 #include "connector.h"
 #include "files_link.h"
@@ -46,6 +47,7 @@ void setup() {
   ui::begin(&links, &files, &modList);  // may run touch calibration first
   net::begin();
   links.begin();
+  ble_reports::begin();  // after Wi-Fi: both share the radio (coexistence)
   ui::noteActivity(millis());
 }
 
@@ -68,6 +70,7 @@ void loop() {
   hw::loop(now);
   mods::pump(modList, now);
   links.loop(now, net::up());
+  ble_reports::loop(now);
 
   uint32_t before = ui::lastActivity();
   ui::loop(now);

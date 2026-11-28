@@ -6,7 +6,6 @@
 #include <WebServer.h>
 #include <WiFi.h>
 #include <TJpg_Decoder.h>
-#include <qrcode.h>
 
 #include "board.h"
 #include "config.h"
@@ -734,19 +733,6 @@ void FilesLink::showQr() {
 
 bool FilesLink::dirty(uint32_t) { return rev_ != drawnRev_; }
 
-void FilesLink::drawQr(const char* s, int x, int y, int maxPx) {
-  QRCode qr;
-  uint8_t buf[qrcode_getBufferSize(4)];
-  if (qrcode_initText(&qr, buf, 4, ECC_LOW, s) != 0) return;
-  int scale = maxPx / (qr.size + 8);  // with a 4-module quiet zone each side
-  if (scale < 2) scale = 2;
-  int side = (qr.size + 8) * scale;
-  tft.fillRect(x, y, side, side, TFT_WHITE);
-  for (uint8_t my = 0; my < qr.size; my++)
-    for (uint8_t mx = 0; mx < qr.size; mx++)
-      if (qrcode_getModule(&qr, mx, my)) tft.fillRect(x + (mx + 4) * scale, y + (my + 4) * scale, scale, scale, TFT_BLACK);
-}
-
 void FilesLink::draw(uint32_t, bool) {
   drawnRev_ = rev_;
   if (mode_ == Mode::Qr) drawQrScreen();
@@ -818,7 +804,7 @@ void FilesLink::drawQrScreen() {
   else if (qrKind_ == 1) snprintf(code, sizeof code, "http://%s/", ip.c_str());
   else snprintf(code, sizeof code, "http://%s/admin#k=%s", ip.c_str(), admin_);
   int side = 200, qy = kTop + 100;
-  drawQr(code, (W - side) / 2, qy, side);
+  qr(code, (W - side) / 2, qy, side);
   int y = qy + side + 6;
   if (qrKind_ == 0) snprintf(a, sizeof a, "%s, password %s", kSsid, pass_);
   else if (qrKind_ == 1) snprintf(a, sizeof a, "Join DASH-Share, then http://%s", ip.c_str());
