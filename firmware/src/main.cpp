@@ -65,6 +65,7 @@ void loop() {
   }
 
   net::loop(now);
+  hw::loop(now);
   mods::pump(modList, now);
   links.loop(now, net::up());
 

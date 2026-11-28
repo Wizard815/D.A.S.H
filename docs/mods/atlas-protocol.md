@@ -25,6 +25,7 @@ JSON object, at most 240 bytes, `"m":"atlas"`, metric, missing means unknown.
 | `wx` | `c`, `rh` %, `hpa`, `txt`, `hi`, `lo` | every few minutes |
 | `pwr` | `v`, `soc` % of the Pi's own battery, `src` the live source: `truck`, `overland` (the overland solar battery) or `reserve` | every minute |
 | `gps` | `lat`, `lon`, `kph`, `hdg` | every 5 s while moving |
+| `alert` | `id` (e.g. `a_123`), `k` cooler / cam / theft / lowbatt, `lvl` 1 info, 2 warning, 3 urgent (0 clears that `id`), `msg` plain words, `snap` 1 when a camera snapshot is waiting in the phone app | when it happens; again with `lvl` 0 when it's over |
 | `cmd` | `id` (the request's nonce), `what` (e.g. "start"), `ok` 0/1, `msg` plain words | after an owner command (remote start) sent over truckd's HTTP API, so every screen sees it happened |
 
 Examples:
@@ -73,3 +74,21 @@ back as a `cmd` frame.
 - DASH itself is read-only. Commands go over HTTP with the owner key, never
   as frames, so a spoofed ESP-NOW frame can't start the truck.
 - Over 240 bytes: the bridge drops it; MQTT still delivers it.
+
+## Alerts on DASH
+
+DASH shows the newest alert on the Atlas Home card (`Theft: Ignition on, no
+owner nearby`) and in the Atlas header, and signals it on its light and
+vibration motor until you open the Atlas tab, which counts as seen. The same
+`id` sent again doesn't buzz again; a new `id` or a higher level does.
+
+| `lvl` | Light | Motor | Again |
+| --- | --- | --- | --- |
+| 1 info (lid closed again, back on truck power) | blue, steady | one short buzz | no |
+| 2 warning (cooler over 4 °C, camp cam motion, low battery) | amber, slow blink | two buzzes | every 5 min until seen |
+| 3 urgent (theft: ignition on with no owner, towed, box opened; food warm for hours) | red, fast blink | three long buzzes | every 30 s until seen |
+
+Example: `{"m":"atlas","t":"alert","s":88,"id":"a_17","k":"cooler","lvl":2,"msg":"Cooler at 6 °C for 20 min","ts":1764300000}`.
+The motor needs the MCP23017 fitted (`DASH_HAS_EXPANDER=1`); without it DASH
+uses the light alone. Snapshots stay in the phone app: DASH only says one is
+waiting.

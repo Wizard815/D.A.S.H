@@ -613,6 +613,35 @@ void test_fob_status() {
   TEST_ASSERT_EQUAL(87, f.battery);
 }
 
+void test_atlas_alerts() {
+  AtlasState st;
+  const char* a = "{\"m\":\"atlas\",\"t\":\"alert\",\"s\":1,\"id\":\"a_1\",\"k\":\"theft\",\"lvl\":3,\"msg\":\"Ignition on, no owner nearby\",\"snap\":1}";
+  TEST_ASSERT_EQUAL((int)AtlasFrame::Alert, (int)st.apply(a, strlen(a), 1000));
+  TEST_ASSERT_EQUAL(3, st.alertLvl);
+  TEST_ASSERT_FALSE(st.alertSeen);
+  TEST_ASSERT_TRUE(st.alertSnap);
+  char b[96];
+  bool att = false;
+  atlasSummary(st, 1000, 0, Units::US, b, sizeof b, &att);
+  TEST_ASSERT_TRUE(att);
+  TEST_ASSERT_EQUAL_STRING("Theft: Ignition on, no owner nearby", b);
+  st.alertSeen = true;
+  st.apply(a, strlen(a), 2000);  // the same alert again: no new buzz
+  TEST_ASSERT_TRUE(st.alertSeen);
+  const char* c = "{\"m\":\"atlas\",\"t\":\"alert\",\"s\":2,\"id\":\"a_2\",\"lvl\":0}";
+  st.apply(c, strlen(c), 3000);  // clearing another id leaves this one
+  TEST_ASSERT_EQUAL(3, st.alertLvl);
+  const char* d = "{\"m\":\"atlas\",\"t\":\"alert\",\"s\":3,\"id\":\"a_1\",\"lvl\":0}";
+  st.apply(d, strlen(d), 4000);
+  TEST_ASSERT_EQUAL(0, st.alertLvl);
+  AlertSignal s3 = alertSignal(3), s1 = alertSignal(1);
+  TEST_ASSERT_TRUE(s3.r && !s3.g && !s3.b);
+  TEST_ASSERT_EQUAL_UINT32(30000, s3.repeatMs);
+  TEST_ASSERT_TRUE(s1.b && !s1.r);
+  TEST_ASSERT_EQUAL_UINT32(0, s1.repeatMs);
+  TEST_ASSERT_EQUAL_STRING("Cooler", alertKindWords("cooler"));
+}
+
 void test_share_password() {
   uint8_t r[10] = {0, 1, 2, 3, 4, 250, 251, 252, 253, 254};
   char p[11];
@@ -696,5 +725,6 @@ int main() {
   RUN_TEST(test_titan_glance);
   RUN_TEST(test_atlas_power_source);
   RUN_TEST(test_fob_status);
+  RUN_TEST(test_atlas_alerts);
   return UNITY_END();
 }

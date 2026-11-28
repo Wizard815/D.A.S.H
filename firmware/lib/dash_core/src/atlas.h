@@ -67,7 +67,7 @@ struct AtlasGps {
   AtlasGps();
 };
 
-enum class AtlasFrame : uint8_t { Bad, Hi, Bye, Obd, Dtc, Dtx, Sync, Wx, Pwr, Gps, Cmd, Other };
+enum class AtlasFrame : uint8_t { Bad, Hi, Bye, Obd, Dtc, Dtx, Sync, Wx, Pwr, Gps, Cmd, Alert, Other };
 
 struct AtlasState {
   AtlasObd obd;
@@ -88,6 +88,12 @@ struct AtlasState {
   char cmdWhat[12] = "", cmdMsg[64] = "";
   bool cmdOk = false;
   uint32_t cmdAtMs = 0;
+  // The latest alert (cooler, cam, theft, lowbatt). lvl 0: cleared.
+  char alertK[10] = "", alertId[16] = "", alertMsg[72] = "";
+  uint8_t alertLvl = 0;
+  bool alertSnap = false;  // a cam snapshot is waiting in the phone app
+  bool alertSeen = true;   // set once the person has looked (opened Atlas)
+  uint32_t alertAtMs = 0;
   uint32_t rev = 0;     // bumps on every applied frame
   uint32_t clockUnix = 0, clockAtMs = 0;  // from any frame's "ts": the truck's clock
 
@@ -134,5 +140,23 @@ void atlasSummary(const AtlasState& s, uint32_t nowMs, uint32_t nowUnix, Units u
 // The power source in words: "on truck power", "on the overland battery",
 // "on its reserve battery", or "" when not said.
 const char* atlasPowerSource(const char* src);
+
+// How DASH signals an alert level on its light and vibration motor.
+// lvl 1 (info): blue, one short buzz, once.
+// lvl 2 (warning): amber blinking slowly, two buzzes, again every 5 min
+//   until it's seen.
+// lvl 3 (urgent: theft, food warm for long): red blinking fast, three long
+//   buzzes, again every 30 s until it's seen.
+struct AlertSignal {
+  bool r, g, b;
+  uint16_t blinkMs;       // 0: steady
+  uint8_t buzzes;         // pulses per round
+  uint16_t buzzMs, gapMs;
+  uint32_t repeatMs;      // 0: once
+};
+AlertSignal alertSignal(uint8_t lvl);
+
+// "Cooler", "Camera", "Theft", "Low battery"; the raw kind otherwise.
+const char* alertKindWords(const char* k);
 
 }  // namespace dash

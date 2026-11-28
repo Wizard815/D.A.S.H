@@ -9,6 +9,7 @@
 #include "config.h"
 #include "espnow_bus.h"
 #include "gfx.h"
+#include "hw.h"
 #include "net.h"
 
 using namespace gfx;
@@ -103,7 +104,16 @@ void AtlasMod::onMqtt(char* topic, uint8_t* payload, unsigned int len) {
 void AtlasMod::onFrame(const char* json, size_t len, dash::Via via, uint32_t now) {
   if (via == dash::Via::EspNow && !useEspNow()) return;
   if (via == dash::Via::Mqtt && !useMqtt()) return;
+  uint8_t wasLvl = st_.alertLvl;
+  bool wasSeen = st_.alertSeen;
+  char wasId[sizeof st_.alertId];
+  memcpy(wasId, st_.alertId, sizeof wasId);
   dash::AtlasFrame f = st_.apply(json, len, now);
+  if (f == dash::AtlasFrame::Alert &&
+      (st_.alertLvl != wasLvl || st_.alertSeen != wasSeen || strcmp(st_.alertId, wasId) != 0)) {
+    // A new alert buzzes and lights; a cleared one stops.
+    hw::alert(dash::alertSignal(st_.alertLvl && !st_.alertSeen ? st_.alertLvl : 0));
+  }
   if (f != dash::AtlasFrame::Bad) lastVia_ = via;
 }
 
@@ -145,6 +155,11 @@ bool AtlasMod::homeCard(dash::HomeCard& c, uint32_t now) const {
 // ---------- screen ----------
 void AtlasMod::opened() {
   open_ = true;
+  if (st_.alertLvl && !st_.alertSeen) {  // looking at Atlas counts as seen
+    st_.alertSeen = true;
+    st_.rev++;
+    hw::alert(dash::alertSignal(0));
+  }
   page_ = 0;
   codePage_ = 0;
   drawnRev_ = UINT32_MAX;
@@ -169,6 +184,12 @@ void AtlasMod::drawHeader(uint32_t now) {
   heading("Atlas");
   char w[72];
   bool live = dash::atlasLive(st_, now);
+  // An alert says so here until it's cleared.
+  if (st_.alertLvl) {
+    snprintf(w, sizeof w, "%s%s", dash::alertKindWords(st_.alertK), st_.alertSnap ? ": photo in app" : "");
+    text(w, W - 16, kTop + 20, 2, st_.alertLvl >= 3 ? BAD : GOLD, TR_DATUM);
+    return;
+  }
   // A remote start (or other owner command) in the last 2 minutes says so here.
   if (st_.cmdAtMs && now - st_.cmdAtMs < 120000) {
     snprintf(w, sizeof w, "%s", st_.cmdMsg[0] ? st_.cmdMsg : st_.cmdOk ? "Command done" : "Command failed");

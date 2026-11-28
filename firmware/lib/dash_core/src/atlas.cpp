@@ -113,6 +113,28 @@ AtlasFrame AtlasState::apply(const char* json, size_t len, uint32_t now) {
     copy(cmdMsg, sizeof cmdMsg, doc["msg"]);
     cmdOk = (doc["ok"] | 0) != 0;
     cmdAtMs = now;
+  } else if (!strcmp(t, "alert")) {
+    f = AtlasFrame::Alert;
+    char id[16];
+    copy(id, sizeof id, doc["id"]);
+    uint8_t lvl = (uint8_t)(doc["lvl"] | 1);
+    if (lvl == 0) {
+      // Cleared: only the alert it names (or any, without an id).
+      if (!*id || !strcmp(id, alertId)) {
+        alertLvl = 0;
+        alertSeen = true;
+      }
+    } else {
+      if (lvl > 3) lvl = 3;
+      bool fresh = strcmp(id, alertId) != 0 || !*id || lvl > alertLvl;
+      snprintf(alertId, sizeof alertId, "%s", id);
+      copy(alertK, sizeof alertK, doc["k"]);
+      copy(alertMsg, sizeof alertMsg, doc["msg"]);
+      alertSnap = (doc["snap"] | 0) != 0;
+      alertLvl = lvl;
+      alertAtMs = now;
+      if (fresh) alertSeen = false;  // a repeat of the same alert doesn't buzz again
+    }
   } else if (!strcmp(t, "gps")) {
     f = AtlasFrame::Gps;
     JsonVariantConst la = doc["lat"], lo = doc["lon"];
@@ -329,6 +351,9 @@ void atlasSummary(const AtlasState& s, uint32_t now, uint32_t nowUnix, Units u, 
   bool att = false;
   if (!s.heard) {
     snprintf(buf, n, "Not heard yet");
+  } else if (s.alertLvl >= 2) {
+    att = true;
+    snprintf(buf, n, "%s: %s", alertKindWords(s.alertK), *s.alertMsg ? s.alertMsg : "check Atlas");
   } else if (s.dtc.have && s.dtc.n > 0) {
     bool urgent = false;
     for (int i = 0; i < s.dtc.n; i++) urgent = urgent || dtcUrgent(s.dtc.code[i]);
@@ -364,6 +389,23 @@ const char* atlasPowerSource(const char* src) {
   if (!strcmp(src, "overland")) return "on the overland battery";
   if (!strcmp(src, "reserve")) return "on its reserve battery";
   return "";
+}
+
+AlertSignal alertSignal(uint8_t lvl) {
+  switch (lvl) {
+    case 0: return {false, false, false, 0, 0, 0, 0, 0};
+    case 1: return {false, false, true, 0, 1, 150, 0, 0};
+    case 2: return {true, true, false, 1000, 2, 250, 200, 5UL * 60UL * 1000UL};
+    default: return {true, false, false, 250, 3, 600, 300, 30000};
+  }
+}
+
+const char* alertKindWords(const char* k) {
+  if (!strcmp(k, "cooler")) return "Cooler";
+  if (!strcmp(k, "cam")) return "Camera";
+  if (!strcmp(k, "theft")) return "Theft";
+  if (!strcmp(k, "lowbatt")) return "Low battery";
+  return *k ? k : "Alert";
 }
 
 }  // namespace dash
