@@ -73,7 +73,10 @@ home Wi-Fi names, then `cd bridge && pio run -t upload`.
 - **Pi off:** if the last `sync` it relayed wasn't `synced`, it looks for a
   home Wi-Fi name every 10 minutes and wakes the Pi when it sees one. It
   sleeps between looks (about 10 uA) and wakes at once when the Pi turns on.
-  After 10 wakes with no good sync it slows to hourly.
+  After 10 wakes with no good sync it slows to hourly. With the Pi's LTE
+  modem, it also wakes the Pi every `BRIDGE_LTE_SYNC_EVERY_H` hours (6 by
+  default) while data is waiting, so small things sync over LTE without home
+  Wi-Fi; truckd keeps photos and videos for home.
 - **Remote start over Bluetooth** (with `BRIDGE_START_KEY` set): see below.
   It then wakes every 6 s and listens on Bluetooth for 1.5 s, about 5 mA on
   average instead of 10 uA (measure yours). Use a C3 board with an antenna

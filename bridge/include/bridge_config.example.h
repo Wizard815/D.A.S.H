@@ -14,6 +14,10 @@
 
 // How often to look while parked with data waiting, in seconds.
 #define BRIDGE_SCAN_EVERY_S 600
+// With the LTE modem on the Pi: while parked with data waiting, wake the Pi
+// this often to sync the small things over LTE (the big ones still wait for
+// home Wi-Fi). 0: off, sync only at home.
+#define BRIDGE_LTE_SYNC_EVERY_H 6
 // Wakes without a good sync before slowing to hourly looks.
 #define BRIDGE_MAX_WAKES 10
 

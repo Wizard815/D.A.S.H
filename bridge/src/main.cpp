@@ -36,6 +36,22 @@
 #warning "include/bridge_config.h not found: using bridge_config.example.h"
 #include "bridge_config.example.h"
 #endif
+// Settings added after a bridge_config.h was made: off unless set.
+#ifndef BRIDGE_START_KEY
+#define BRIDGE_START_KEY ""
+#endif
+#ifndef BRIDGE_BLE_NAME
+#define BRIDGE_BLE_NAME "Atlas"
+#endif
+#ifndef BRIDGE_BLE_EVERY_S
+#define BRIDGE_BLE_EVERY_S 6
+#endif
+#ifndef BRIDGE_BLE_LISTEN_MS
+#define BRIDGE_BLE_LISTEN_MS 1500
+#endif
+#ifndef BRIDGE_LTE_SYNC_EVERY_H
+#define BRIDGE_LTE_SYNC_EVERY_H 0
+#endif
 
 namespace {
 constexpr size_t kFrameMax = 240;
@@ -45,6 +61,7 @@ constexpr uint32_t kAsleepAfterMs = 5000;  // awake pin low this long: the Pi is
 RTC_DATA_ATTR bool needSync = true;  // first power-on: look, to be safe
 RTC_DATA_ATTR uint8_t wakesTried = 0;
 RTC_DATA_ATTR int64_t nextScanAt = 0;  // seconds on the RTC clock; 0: look now
+RTC_DATA_ATTR int64_t nextLteAt = 0;  // next LTE sync wake while parked
 RTC_DATA_ATTR bool clockSet = false;   // set from truckd's "ts", kept across sleep
 RTC_DATA_ATTR char pending[232] = "";  // a checked start waiting for the Pi
 RTC_DATA_ATTR uint32_t usedNonces[8];  // fingerprints of nonces already taken
@@ -309,6 +326,16 @@ void scanMode() {
       }
     }
     nextWifi = (uint32_t)(nextScanAt - now);
+#if BRIDGE_LTE_SYNC_EVERY_H > 0
+    // The Pi has its own LTE: every few hours it may sync without home.
+    if (nextLteAt == 0) nextLteAt = now + (int64_t)BRIDGE_LTE_SYNC_EVERY_H * 3600;
+    if (now >= nextLteAt) {
+      Serial.println("scan: LTE sync time; waking the Pi");
+      nextLteAt = now + (int64_t)BRIDGE_LTE_SYNC_EVERY_H * 3600;
+      wakePi();
+    }
+    if ((uint32_t)(nextLteAt - now) < nextWifi) nextWifi = (uint32_t)(nextLteAt - now);
+#endif
   }
   if (bleOn()) sleepNow(true, BRIDGE_BLE_EVERY_S);
   if (needSync) sleepNow(true, nextWifi ? nextWifi : 1);
@@ -350,6 +377,7 @@ void fromPi(char* line, size_t len) {
     int64_t was = nowS();
     settimeofday(&tv, nullptr);
     nextScanAt += nowS() - was;  // keep the next look the same distance away
+    if (nextLteAt) nextLteAt += nowS() - was;
     clockSet = true;
   }
   // Remember sync state for scan mode.
