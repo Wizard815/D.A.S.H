@@ -8,6 +8,7 @@
 #include "battery.h"
 #include "hw.h"
 #include "net.h"
+#include "projects_link.h"
 #include "settings.h"
 
 #ifndef DASH_VERSION
@@ -19,6 +20,7 @@ namespace ui {
 namespace {
 TFT_eSPI tft;
 dash::Registry* links = nullptr;
+ProjectsLink* projects = nullptr;
 
 // Neutral dark with a gold accent, to sit next to FAITH's look.
 uint16_t BG, CARD, TEXT, MUTED, GOLD, OK, BAD;
@@ -28,8 +30,8 @@ constexpr int kBarH = 32;              // status bar
 constexpr int kTabH = 56;              // tab bar, comfortably over 44 px
 constexpr int kTabY = H - kTabH;
 constexpr int kTop = kBarH, kBottom = kTabY;
-constexpr int kTabs = 3;               // Home, Links, Device
-const char* kTabNames[kTabs] = {"Home", "Links", "Device"};
+constexpr int kTabs = 4;               // Home, Projects, Links, Device
+const char* kTabNames[kTabs] = {"Home", "Projects", "Links", "Device"};
 
 constexpr int kRowH = 72, kRowY0 = kTop + 52;
 constexpr int kToggleW = 84, kToggleH = 48;
@@ -38,7 +40,7 @@ Screen screen = Screen::Home, beforeTalk = Screen::Home;
 bool needFull = true;
 uint32_t lastTick = 0, lastTouch = 0, activity = 0;
 bool touching = false;
-uint32_t drawnLinksRev = 0;
+uint32_t drawnLinksRev = 0, drawnHomeProjects = 0;
 char drawnClock[8] = "";
 char drawnBar[40] = "";
 
@@ -85,7 +87,8 @@ void drawTabs() {
     }
     tft.setTextDatum(MC_DATUM);
     tft.setTextColor(on ? TEXT : MUTED, on ? CARD : BG);
-    tft.drawString(kTabNames[i], x + tw / 2, kTabY + kTabH / 2 - 2, 4);
+    uint8_t font = tft.textWidth(kTabNames[i], 4) <= tw - 12 ? 4 : 2;
+    tft.drawString(kTabNames[i], x + tw / 2, kTabY + kTabH / 2 - 2, font);
   }
 }
 
@@ -100,9 +103,11 @@ void drawHome(bool full) {
     strftime(date, sizeof date, "%A %e %B", &tmv);
   }
   bool linksChanged = links && links->revision() != drawnLinksRev;
-  if (!full && strcmp(clock, drawnClock) == 0 && !linksChanged) return;
+  uint32_t pr = projects ? projects->revision() : 0;
+  if (!full && strcmp(clock, drawnClock) == 0 && !linksChanged && pr == drawnHomeProjects) return;
   strcpy(drawnClock, clock);
   if (links) drawnLinksRev = links->revision();
+  drawnHomeProjects = pr;
 
   if (full) clearContent();
   text(clock, W / 2, kTop + 40, 7, TEXT, TC_DATUM, W - 40);
@@ -124,10 +129,25 @@ void drawHome(bool full) {
   y += 100;
   tft.fillRoundRect(12, y, W - 24, 84, 10, CARD);
   tft.setTextColor(TEXT, CARD);
-  tft.drawString("Next task", 28, y + 16, 4);
-  tft.setTextColor(MUTED, CARD);
-  tft.drawString("Shows here once Orb is linked (M4)", 28, y + 52, 2);
+  if (projects && projects->enabled) {
+    // Tap it to open Projects.
+    tft.drawString("Projects", 28, y + 16, 4);
+    char sum[40];
+    if (projects->hasGlance()) dash::glanceSummary(projects->glance(), sum, sizeof sum);
+    else snprintf(sum, sizeof sum, "Asking FAITH...");
+    bool needs = projects->hasGlance() && projects->glance().needsYou;
+    tft.setTextColor(needs ? GOLD : MUTED, CARD);
+    tft.drawString(sum, 28, y + 52, 2);
+    tft.setTextColor(MUTED, CARD);
+    tft.setTextDatum(TR_DATUM);
+    tft.drawString("Open >", W - 28, y + 16, 2);
+  } else {
+    tft.drawString("Next task", 28, y + 16, 4);
+    tft.setTextColor(MUTED, CARD);
+    tft.drawString("Shows here once Orb is linked (M4)", 28, y + 52, 2);
+  }
 }
+constexpr int kHomeProjectsY = kTop + 270;
 
 // ---------- Links ----------
 void drawLinks(bool full) {
@@ -180,6 +200,242 @@ bool tapLinks(int x, int y) {
   return false;
 }
 
+// ---------- Projects ----------
+// FAITH's family projects, read-only: a list by project, and one thread's
+// latest line. Tap a thread to open it. Pages, not scrolling, until the knob (M3).
+constexpr int kListY = kTop + 52;
+constexpr int kNavH = 48, kNavY = kBottom - kNavH - 6;
+constexpr int kHeadRowH = 28, kThreadRowH = 56;
+constexpr int kMaxRows = dash::Glance::kProjects + dash::Glance::kThreads;
+constexpr int kMaxPages = 16;
+dash::GlanceRow rows[kMaxRows];
+int nRows = 0, nPages = 1, page = 0;
+int pageStart[kMaxPages + 1] = {0};
+char openThread[40] = "";  // the thread being read, by id; empty: the list
+uint32_t drawnProjectsRev = UINT32_MAX;
+uint32_t drawnProjectsLinks = UINT32_MAX;
+
+// Cuts `s` to fit `maxW` pixels in `font`, ending with "..." when cut.
+void fit(char* out, size_t n, const char* s, uint8_t font, int maxW) {
+  snprintf(out, n, "%s", s);
+  if (tft.textWidth(out, font) <= maxW) return;
+  size_t len = strlen(out);
+  while (len > 0) {
+    out[--len] = 0;
+    char tmp[80];
+    snprintf(tmp, sizeof tmp, "%s...", out);
+    if (tft.textWidth(tmp, font) <= maxW) {
+      snprintf(out, n, "%s", tmp);
+      return;
+    }
+  }
+}
+
+// Draws `s` wrapped at spaces in `font`, from y, at most `lines` lines. Returns the next y.
+int wrap(const char* s, int x, int y, int maxW, uint8_t font, uint16_t fg, uint16_t bg, int lines) {
+  char line[80];
+  const char* p = s;
+  int lh = tft.fontHeight(font) + 4;
+  tft.setTextDatum(TL_DATUM);
+  tft.setTextColor(fg, bg);
+  while (*p && lines-- > 0) {
+    while (*p == ' ') p++;
+    size_t take = 0, lastSpace = 0;
+    while (p[take]) {
+      snprintf(line, sizeof line, "%.*s", (int)(take + 1), p);
+      if (tft.textWidth(line, font) > maxW) break;
+      if (p[take] == ' ') lastSpace = take;
+      take++;
+    }
+    if (p[take] && lastSpace && lines > 0) take = lastSpace;  // break at a word
+    if (p[take] && lines == 0) {                               // last line: cut with "..."
+      char cut[80];
+      fit(cut, sizeof cut, p, font, maxW);
+      tft.drawString(cut, x, y, font);
+      return y + lh;
+    }
+    snprintf(line, sizeof line, "%.*s", (int)take, p);
+    tft.drawString(line, x, y, font);
+    p += take;
+    y += lh;
+  }
+  return y;
+}
+
+uint16_t statusColour(const char* st) {
+  if (dash::threadNeedsYou(st)) return BAD;
+  if (!strcmp(st, "working")) return GOLD;
+  return MUTED;
+}
+
+void navButton(const char* label, int x, int w, bool primary) {
+  tft.fillRoundRect(x, kNavY, w, kNavH, 8, primary ? GOLD : CARD);
+  tft.setTextDatum(MC_DATUM);
+  tft.setTextColor(primary ? BG : TEXT, primary ? GOLD : CARD);
+  tft.drawString(label, x + w / 2, kNavY + kNavH / 2, 4);
+}
+
+void layoutPages() {
+  nRows = dash::glanceRows(projects->glance(), rows, kMaxRows);
+  nPages = 0;
+  int y = kListY, bottom = kNavY - 6;
+  for (int i = 0; i < nRows; i++) {
+    int h = rows[i].heading ? kHeadRowH : kThreadRowH;
+    // Keep a heading with its first thread.
+    int need = h + (rows[i].heading && i + 1 < nRows && !rows[i + 1].heading ? kThreadRowH : 0);
+    if (i == 0 || y + need > bottom) {
+      if (nPages >= kMaxPages) { nRows = i; break; }
+      pageStart[nPages++] = i;
+      y = kListY;
+    }
+    y += h;
+  }
+  if (nPages == 0) pageStart[nPages++] = 0;
+  pageStart[nPages] = nRows;
+  if (page >= nPages) page = nPages - 1;
+}
+
+// Where a row of the current page is drawn, or -1 past the page.
+int rowY(int i) {
+  int y = kListY;
+  for (int k = pageStart[page]; k < pageStart[page + 1]; k++) {
+    if (k == i) return y;
+    y += rows[k].heading ? kHeadRowH : kThreadRowH;
+  }
+  return -1;
+}
+
+int findThread(const char* id) {
+  const dash::Glance& g = projects->glance();
+  for (int i = 0; i < g.nThreads; i++)
+    if (!strcmp(g.threads[i].id, id)) return i;
+  return -1;
+}
+
+void drawProjectsMessage(const char* a, const char* b) {
+  text(a, 16, kListY + 8, 4, TEXT);
+  wrap(b, 16, kListY + 48, W - 32, 2, MUTED, BG, 4);
+}
+
+void drawThread(int ti) {
+  const dash::Glance& g = projects->glance();
+  const dash::GlanceThread& t = g.threads[ti];
+  char buf[64];
+  text(g.projects[t.project].name, 16, kTop + 16, 2, MUTED);
+  int y = wrap(t.title, 16, kTop + 38, W - 32, 4, TEXT, BG, 2) + 6;
+  // Status as a badge with words.
+  const char* words = dash::threadStatusText(t.status);
+  int bw = tft.textWidth(words, 2) + 20;
+  tft.fillRoundRect(16, y, bw, 26, 13, CARD);
+  tft.setTextDatum(ML_DATUM);
+  tft.setTextColor(statusColour(t.status), CARD);
+  tft.drawString(words, 26, y + 13, 2);
+  y += 42;
+  if (*t.last) {
+    text("Latest", 16, y, 2, MUTED);
+    y = wrap(t.last, 16, y + 22, W - 32, 4, TEXT, BG, 4) + 12;
+  }
+  snprintf(buf, sizeof buf, "%s", dash::threadNeedsYou(t.status) ? "Answer it in the FAITH app or a chat." : "Read it all or send it more in the FAITH app.");
+  wrap(buf, 16, y, W - 32, 2, MUTED, BG, 2);
+  navButton("Back", 12, W - 24, false);
+}
+
+void drawProjects(bool full) {
+  uint32_t rev = projects ? projects->revision() : 0;
+  uint32_t lrev = links ? links->revision() : 0;
+  if (!full && rev == drawnProjectsRev && lrev == drawnProjectsLinks) return;
+  drawnProjectsRev = rev;
+  drawnProjectsLinks = lrev;
+  clearContent();
+
+  if (!projects || !projects->enabled) {
+    heading("Projects");
+    drawProjectsMessage("Projects are off", "Add DASH_FAITH_TOKEN to secrets.h (see the firmware README), or turn Projects on in Links.");
+    return;
+  }
+  if (!projects->hasGlance()) {
+    heading("Projects");
+    const char* d = projects->detail();
+    drawProjectsMessage("Asking FAITH...", projects->state() == dash::LinkState::Error && *d ? d : "Your projects show here in a moment.");
+    return;
+  }
+  layoutPages();
+  if (*openThread) {
+    int ti = findThread(openThread);
+    if (ti >= 0) {
+      drawThread(ti);
+      return;
+    }
+    openThread[0] = 0;  // put away or gone: back to the list
+  }
+
+  heading("Projects");
+  const dash::Glance& g = projects->glance();
+  char sum[40];
+  dash::glanceSummary(g, sum, sizeof sum);
+  text(sum, W - 16, kTop + 20, 2, g.needsYou ? GOLD : MUTED, TR_DATUM);
+  if (nRows == 0) {
+    drawProjectsMessage("No projects", "FAITH shows no projects for this token.");
+    return;
+  }
+  char line[80];
+  for (int k = pageStart[page]; k < pageStart[page + 1]; k++) {
+    int y = rowY(k);
+    if (rows[k].heading) {
+      const dash::GlanceProject& p = g.projects[rows[k].index];
+      text(p.name, 16, y + 8, 2, MUTED);
+      if (p.count == 0) text("No threads yet", W - 16, y + 8, 2, MUTED, TR_DATUM);
+      continue;
+    }
+    const dash::GlanceThread& t = g.threads[rows[k].index];
+    tft.fillRoundRect(12, y, W - 24, kThreadRowH - 6, 8, CARD);
+    tft.setTextDatum(TL_DATUM);
+    tft.setTextColor(TEXT, CARD);
+    fit(line, sizeof line, t.title, 2, W - 56);
+    tft.drawString(line, 24, y + 7, 2);
+    tft.setTextColor(TEXT, CARD);
+    tft.drawString(">", W - 32, y + 7, 2);
+    const char* words = dash::threadStatusText(t.status);
+    tft.setTextColor(statusColour(t.status), CARD);
+    tft.drawString(words, 24, y + 27, 2);
+    int x = 24 + tft.textWidth(words, 2) + 10;
+    if (*t.last && strcmp(t.last, words)) {
+      fit(line, sizeof line, t.last, 2, W - 24 - x - 12);
+      tft.setTextColor(MUTED, CARD);
+      tft.drawString(line, x, y + 27, 2);
+    }
+  }
+  if (nPages > 1) {
+    char more[32];
+    snprintf(more, sizeof more, "Page %d of %d", page + 1, nPages);
+    text(more, 16, kNavY + 16, 2, MUTED);
+    navButton(page + 1 < nPages ? "Next" : "First", W - 12 - 128, 128, true);
+  }
+}
+
+void tapProjects(int x, int y) {
+  if (!projects || !projects->hasGlance()) return;
+  if (*openThread) {
+    if (y >= kNavY) {
+      openThread[0] = 0;
+      drawProjects(true);
+    }
+    return;
+  }
+  if (nPages > 1 && y >= kNavY && x >= W - 12 - 128 - 12) {
+    page = (page + 1) % nPages;
+    drawProjects(true);
+    return;
+  }
+  for (int k = pageStart[page]; k < pageStart[page + 1]; k++) {
+    int ry = rowY(k);
+    if (rows[k].heading || y < ry || y >= ry + kThreadRowH - 6) continue;
+    snprintf(openThread, sizeof openThread, "%s", projects->glance().threads[rows[k].index].id);
+    drawProjects(true);
+    return;
+  }
+}
+
 // ---------- Device ----------
 void row(int i, const char* label, const char* value) {
   int y = kTop + 60 + i * 34;
@@ -222,6 +478,7 @@ void drawTalk() {
 void draw(bool full) {
   switch (screen) {
     case Screen::Home: drawHome(full); break;
+    case Screen::Projects: drawProjects(full); break;
     case Screen::Links: drawLinks(full); break;
     case Screen::Device: drawDevice(full); break;
     case Screen::Talk: if (full) drawTalk(); break;
@@ -235,11 +492,14 @@ void onTap(int x, int y) {
     return;
   }
   if (screen == Screen::Links) tapLinks(x, y);
+  if (screen == Screen::Projects) tapProjects(x, y);
+  if (screen == Screen::Home && projects && projects->enabled && y >= kHomeProjectsY && y < kHomeProjectsY + 84) show(Screen::Projects);
 }
 }  // namespace
 
-void begin(dash::Registry* l) {
+void begin(dash::Registry* l, ProjectsLink* p) {
   links = l;
+  projects = p;
   tft.init();
   tft.setRotation(0);  // portrait, USB at the bottom (verify on hardware)
   BG = tft.color565(27, 26, 24);
@@ -270,7 +530,19 @@ void calibrateTouch() {
 }
 
 void show(Screen s) {
-  if (s == screen && !needFull) return;
+  if (s == screen && !needFull) {
+    // Tapping Projects again goes back to its list.
+    if (s == Screen::Projects && *openThread) {
+      openThread[0] = 0;
+      needFull = true;
+    }
+    return;
+  }
+  if (s == Screen::Projects) {
+    page = 0;
+    openThread[0] = 0;
+    if (projects) projects->refreshSoon();
+  }
   screen = s;
   needFull = true;
 }

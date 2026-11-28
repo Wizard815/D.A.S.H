@@ -16,3 +16,9 @@
 // For an https:// URL, paste FAITH's CA certificate (PEM) here. Without it the
 // device refuses https rather than trusting any certificate.
 // #define DASH_FAITH_CA_PEM "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----\n"
+
+// A FAITH token for the Projects screen. On the FAITH server:
+//   docker exec faith faith token add client <your-id> dash
+// It's your own screen: your project, Family and (grown-ups) Parents.
+// Leave empty to turn the Projects screen off. Pairing (roadmap M6) replaces this.
+#define DASH_FAITH_TOKEN ""
