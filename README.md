@@ -55,3 +55,4 @@ tested on hardware yet. See [firmware/README.md](firmware/README.md),
 - [Files](docs/files.md)
 - [Mods](docs/mods/README.md), [Atlas](docs/mods/atlas.md), [Atlas protocol](docs/mods/atlas-protocol.md), [T.I.T.A.N](docs/mods/titan.md), [Home Assistant](docs/mods/ha.md)
 - [Bluetooth live reports](docs/ble-reports.md) (to the phone, paired with a passkey)
+- [Phone app](docs/app/README.md), [gateway API](docs/app/gateway-api.md)
