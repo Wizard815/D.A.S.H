@@ -1,10 +1,11 @@
 # Mods
 
 A mod is an integration for another app or device: its own screen, data
-source, settings and Home card. There are three so far: **FAITH** (its health
+source, settings and Home card. There are four so far: **FAITH** (its health
 check and the family's projects), **Atlas**, the truck homelab
-([atlas.md](atlas.md)), and **T.I.T.A.N**, the homelab status board
-([titan.md](titan.md)). Home Assistant, Overseer and Argos fit the same shape.
+([atlas.md](atlas.md)), **T.I.T.A.N**, the homelab status board
+([titan.md](titan.md)), and **Home Assistant**, a few entities and alerts
+([ha.md](ha.md)). Overseer and Argos fit the same shape.
 The DASH phone app (planned) carries the same mods, so there is one app for
 DASH and its mods; FAITH stays its own server and family app.
 
@@ -70,6 +71,6 @@ confirm step exists for anything that acts (unlocking, remote start).
 
 | Mod | Data source | Screen |
 | --- | --- | --- |
-| Home Assistant | MQTT on the home broker, or the REST API with a long-lived token | a few entities, alerts, Yes/No for held actions through FAITH |
+| Home Assistant (more) | MQTT on the home broker, for pushed states | Yes/No for held actions through FAITH |
 | Overseer | `GET /api/readiness` and health | collector status, training readiness |
 | Argos | its HTTP API | model routing, which models are loaded |

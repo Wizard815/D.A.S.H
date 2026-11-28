@@ -57,6 +57,21 @@
 #ifndef DASH_TITAN_TOKEN
 #define DASH_TITAN_TOKEN ""  // T.I.T.A.N's TITAN_GLANCE_TOKEN
 #endif
+#ifndef DASH_HA_URL
+#define DASH_HA_URL ""  // Home Assistant, e.g. http://homeassistant.lan:8123; empty: no HA mod
+#endif
+#ifndef DASH_HA_TOKEN
+#define DASH_HA_TOKEN ""  // a long-lived access token (HA: your profile, Security)
+#endif
+#ifndef DASH_HA_ENTITIES
+#define DASH_HA_ENTITIES ""  // comma-separated entity ids to show, at most 8 with the alerts
+#endif
+#ifndef DASH_HA_ALERTS
+#define DASH_HA_ALERTS ""  // entity ids whose on/open/unlocked/problem is an alert
+#endif
+#ifndef DASH_HA_ALLOW_TOGGLE
+#define DASH_HA_ALLOW_TOGGLE 0  // 1: two taps toggle a switch or light
+#endif
 #ifndef DASH_ESPNOW_KEY
 #define DASH_ESPNOW_KEY ""  // 16 characters, the same on the bridge; empty: not encrypted
 #endif

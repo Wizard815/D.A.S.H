@@ -51,3 +51,16 @@
 // also set DASH_TITAN_CA_PEM like DASH_FAITH_CA_PEM above.
 #define DASH_TITAN_URL ""
 #define DASH_TITAN_TOKEN ""
+
+// ---- Home Assistant (a few entities and alerts). Optional. ----
+// HA's address and a long-lived access token (your HA profile, Security tab).
+// For https, also set DASH_HA_CA_PEM like DASH_FAITH_CA_PEM above.
+#define DASH_HA_URL ""
+#define DASH_HA_TOKEN ""
+// Entity ids, comma-separated. Alerts are shown too and buzz DASH when they
+// turn on, open, unlocked or problem. At most 8 in all.
+#define DASH_HA_ENTITIES ""  // "sensor.living_room_temperature,light.kitchen"
+#define DASH_HA_ALERTS ""    // "binary_sensor.front_door,lock.back_door"
+// 1: tap a switch or light twice to toggle it. The token's user must be
+// allowed to. 0 (the default) keeps DASH read-only.
+#define DASH_HA_ALLOW_TOGGLE 0
