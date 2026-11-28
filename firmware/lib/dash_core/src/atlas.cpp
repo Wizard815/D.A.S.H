@@ -104,6 +104,7 @@ AtlasFrame AtlasState::apply(const char* json, size_t len, uint32_t now) {
     f = AtlasFrame::Pwr;
     pwr.volts = num(doc["v"]);
     pwr.soc = num(doc["soc"]);
+    copy(pwr.src, sizeof pwr.src, doc["src"]);
     pwr.atMs = now;
     pwr.have = true;
   } else if (!strcmp(t, "cmd")) {
@@ -355,6 +356,13 @@ void atlasSummary(const AtlasState& s, uint32_t now, uint32_t nowUnix, Units u, 
     att = s.sync.have && !strcmp(s.sync.st, "failed");
   }
   if (attention) *attention = att;
+}
+
+const char* atlasPowerSource(const char* src) {
+  if (!strcmp(src, "truck")) return "on truck power";
+  if (!strcmp(src, "overland")) return "on the overland battery";
+  if (!strcmp(src, "reserve")) return "on its reserve battery";
+  return "";
 }
 
 }  // namespace dash

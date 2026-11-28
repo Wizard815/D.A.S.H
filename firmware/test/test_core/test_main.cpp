@@ -572,6 +572,19 @@ void test_titan_glance() {
   TEST_ASSERT_FALSE(parseTitan("nope", 4, g));
 }
 
+void test_atlas_power_source() {
+  AtlasState st;
+  const char* j = "{\"m\":\"atlas\",\"t\":\"pwr\",\"s\":1,\"v\":13.1,\"soc\":96,\"src\":\"overland\"}";
+  st.apply(j, strlen(j), 1000);
+  TEST_ASSERT_TRUE(st.pwr.have);
+  TEST_ASSERT_EQUAL_STRING("overland", st.pwr.src);
+  TEST_ASSERT_EQUAL_STRING("on the overland battery", atlasPowerSource(st.pwr.src));
+  TEST_ASSERT_EQUAL_STRING("", atlasPowerSource(""));
+  const char* k = "{\"m\":\"atlas\",\"t\":\"pwr\",\"s\":2,\"v\":12.4}";
+  st.apply(k, strlen(k), 2000);
+  TEST_ASSERT_EQUAL_STRING("", st.pwr.src);
+}
+
 void test_share_password() {
   uint8_t r[10] = {0, 1, 2, 3, 4, 250, 251, 252, 253, 254};
   char p[11];
@@ -653,5 +666,6 @@ int main() {
   RUN_TEST(test_mjpeg_frames);
   RUN_TEST(test_atlas_sync_helpers);
   RUN_TEST(test_titan_glance);
+  RUN_TEST(test_atlas_power_source);
   return UNITY_END();
 }

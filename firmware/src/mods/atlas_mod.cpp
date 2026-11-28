@@ -299,7 +299,8 @@ void AtlasMod::drawTrip(uint32_t now) {
     dash::fmtVolts(v, sizeof v, st_.pwr.volts);
     if (isnan(st_.pwr.soc)) snprintf(a, sizeof a, "Atlas battery: %s", v);
     else snprintf(a, sizeof a, "Atlas battery: %d%%", (int)lroundf(st_.pwr.soc));
-    snprintf(b, sizeof b, "%s. Mode: %s", v, *st_.mode ? st_.mode : "not said");
+    const char* srcw = dash::atlasPowerSource(st_.pwr.src);
+    snprintf(b, sizeof b, "%s%s%s. Mode: %s", v, *srcw ? ", " : "", srcw, *st_.mode ? st_.mode : "not said");
     bool low = !isnan(st_.pwr.soc) && st_.pwr.soc < 20;
     card(a, low ? BAD : TEXT, b);
   } else {

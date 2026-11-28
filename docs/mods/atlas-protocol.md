@@ -23,7 +23,7 @@ JSON object, at most 240 bytes, `"m":"atlas"`, metric, missing means unknown.
 | `dtx` | `c` code, `d` plain words up to 100 characters | optional, once per code. Without it DASH uses its own table for common codes, then the code's area. |
 | `sync` | `st` waiting / syncing / synced / failed / off, `q` records waiting, `last` unix time of the last good sync, `via`, `err` | on change |
 | `wx` | `c`, `rh` %, `hpa`, `txt`, `hi`, `lo` | every few minutes |
-| `pwr` | `v`, `soc` % of the Pi's own battery | every minute |
+| `pwr` | `v`, `soc` % of the Pi's own battery, `src` the live source: `truck`, `overland` (the overland solar battery) or `reserve` | every minute |
 | `gps` | `lat`, `lon`, `kph`, `hdg` | every 5 s while moving |
 | `cmd` | `id` (the request's nonce), `what` (e.g. "start"), `ok` 0/1, `msg` plain words | after an owner command (remote start) sent over truckd's HTTP API, so every screen sees it happened |
 

@@ -53,6 +53,7 @@ struct AtlasWeather {
 
 struct AtlasPower {
   float volts, soc;  // the brain's own battery
+  char src[10] = "";  // live power source: truck, overland or reserve; "" if not said
   uint32_t atMs = 0;
   bool have = false;
   AtlasPower();
@@ -129,5 +130,9 @@ const char* syncWords(const char* st);
 
 // One line for the Home card and the Links row.
 void atlasSummary(const AtlasState& s, uint32_t nowMs, uint32_t nowUnix, Units u, char* buf, size_t n, bool* attention);
+
+// The power source in words: "on truck power", "on the overland battery",
+// "on its reserve battery", or "" when not said.
+const char* atlasPowerSource(const char* src);
 
 }  // namespace dash
