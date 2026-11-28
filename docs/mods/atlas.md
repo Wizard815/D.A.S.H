@@ -103,6 +103,12 @@ For the DASH phone app near the truck while the Pi is off
    comes back as a `cmd` frame. A start the Pi never wakes for is dropped
    after 5 minutes.
 
+truckd hands the phone the start key at pairing (`start_key` from
+`POST /api/pair`). `POST /api/start-key/rotate` makes a new one and truckd
+sends it to the bridge over the UART only: `{"m":"bridge","t":"key","k":"<64 hex>"}`,
+answered with `{"m":"bridge","t":"key","ok":1}`. The bridge keeps it in flash,
+so it survives power loss; `BRIDGE_START_KEY` is only the first one.
+
 `tools/atlas-sign.sh <key>` prints a signed request for testing, for example
 with nRF Connect on a phone.
 

@@ -25,6 +25,7 @@
 #include <esp_sleep.h>
 #include <esp_wifi.h>
 #include <mbedtls/md.h>
+#include <Preferences.h>
 #include <sys/time.h>
 
 #include <NimBLEDevice.h>
@@ -119,13 +120,43 @@ void wakePi() {
 // "sig":"<hex HMAC-SHA256 of remote_start|nonce|exp with the start key>"}.
 // The bridge can't trust the phone, so it checks the signature itself: a
 // stranger's writes can't wake the Pi and run the battery down.
-constexpr char kStartKeyHex[] = BRIDGE_START_KEY;
+// The start key: one truckd sent (it rotates it), kept in flash; else the
+// one in bridge_config.h.
+char startKeyHex[65] = "";
+
+bool isHexKey(const char* k) {
+  if (!k || strlen(k) != 64) return false;
+  for (const char* p = k; *p; p++)
+    if (!isxdigit((unsigned char)*p)) return false;
+  return true;
+}
+
+const char* startKey() {
+  if (!*startKeyHex) {
+    Preferences p;
+    p.begin("bridge", true);
+    String k = p.getString("startkey", "");
+    p.end();
+    snprintf(startKeyHex, sizeof startKeyHex, "%s", isHexKey(k.c_str()) ? k.c_str() : BRIDGE_START_KEY);
+  }
+  return startKeyHex;
+}
+
+bool setStartKey(const char* k) {
+  if (!isHexKey(k)) return false;
+  Preferences p;
+  p.begin("bridge", false);
+  bool ok = p.putString("startkey", k) == 64;
+  p.end();
+  if (ok) snprintf(startKeyHex, sizeof startKeyHex, "%s", k);
+  return ok;
+}
 constexpr int kExpAheadS = 120;  // the Pi takes ~30-60 s to boot
 const char* kSvcUuid = "6a7c0001-4a1e-4d4b-9a54-41544c415331";
 const char* kCmdUuid = "6a7c0002-4a1e-4d4b-9a54-41544c415331";
 const char* kStatusUuid = "6a7c0003-4a1e-4d4b-9a54-41544c415331";
 
-bool bleOn() { return strlen(kStartKeyHex) == 64; }
+bool bleOn() { return isHexKey(startKey()); }
 
 uint32_t fnv(const char* s) {
   uint32_t h = 2166136261u;
@@ -136,7 +167,7 @@ uint32_t fnv(const char* s) {
 bool hexKey(uint8_t out[32]) {
   for (int i = 0; i < 32; i++) {
     unsigned v;
-    if (sscanf(kStartKeyHex + 2 * i, "%2x", &v) != 1) return false;
+    if (sscanf(startKey() + 2 * i, "%2x", &v) != 1) return false;
     out[i] = (uint8_t)v;
   }
   return true;
@@ -292,6 +323,11 @@ void handleOwn(JsonDocument& doc) {
     char out[96];
     snprintf(out, sizeof out, "{\"m\":\"bridge\",\"t\":\"pong\",\"mac\":\"%s\",\"dash\":%s}", WiFi.macAddress().c_str(), haveDash ? "true" : "false");
     sendLine(out);
+  } else if (!strcmp(t, "key")) {
+    // A new start key from truckd (POST /api/start-key/rotate). Only over the
+    // UART, the wire from the Pi: never over ESP-NOW or Bluetooth.
+    bool ok = setStartKey(doc["k"] | "");
+    sendLine(ok ? "{\"m\":\"bridge\",\"t\":\"key\",\"ok\":1}" : "{\"m\":\"bridge\",\"t\":\"key\",\"ok\":0,\"err\":\"need 64 hex characters\"}");
   } else if (!strcmp(t, "need")) {
     needSync = (doc["sync"] | 1) != 0;
     if (!needSync) wakesTried = 0;
