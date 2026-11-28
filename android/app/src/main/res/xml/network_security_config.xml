@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- truckd (http://atlas.local:8080) and T.I.T.A.N (http://titan.lan:8130)
+     answer plain HTTP on the truck and home networks, so cleartext is allowed.
+     The gateway must be https; the app refuses an http:// gateway. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

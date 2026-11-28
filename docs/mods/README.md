@@ -25,7 +25,8 @@ a build flag (`DASH_MOD_<NAME>=1` in `platformio.ini`) and an On/Off switch in
 
 ## The phone app
 
-DASH is one app: the device plus a phone app (planned). You install mods in
+DASH is one app: the device plus a phone app (first version in
+[`android/`](../../android), see [../app/README.md](../app/README.md)). You install mods in
 the app; the app turns them on and sets them up on the device, and sends the
 device a firmware update when a mod needs code it doesn't have yet (an ESP32
 can't load code at run time, so device-side mods arrive as an update). The

@@ -48,4 +48,5 @@ tested on hardware yet. See [firmware/README.md](firmware/README.md),
 - [Roadmap](docs/roadmap.md)
 - [Open questions](docs/open-questions.md)
 - [Files](docs/files.md)
+- [Phone app](docs/app/README.md), [gateway API](docs/app/gateway-api.md)
 - [Mods](docs/mods/README.md), [Atlas](docs/mods/atlas.md), [Atlas protocol](docs/mods/atlas-protocol.md), [T.I.T.A.N](docs/mods/titan.md)
