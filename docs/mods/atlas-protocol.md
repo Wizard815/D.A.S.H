@@ -21,7 +21,7 @@ JSON object, at most 240 bytes, `"m":"atlas"`, metric, missing means unknown.
 | `obd` | `ect` `iat` `oil` `atf` (deg C), `v` volts, `rpm`, `kph`, `fuel` %, `l100` and `l100a` (L/100 km now and trip average), `rng` km | every 2 s while driving |
 | `dtc` | `mil` 0/1, `codes` up to 8, like `"P0420"`. An empty list means cleared. | on change and every 60 s |
 | `dtx` | `c` code, `d` plain words up to 100 characters | optional, once per code. Without it DASH uses its own table for common codes, then the code's area. |
-| `sync` | `st` waiting / syncing / synced / failed / off, `q` records waiting, `last` unix time of the last good sync, `via`, `err` | on change |
+| `sync` | `st` waiting / syncing / synced / partial (light sync over LTE; photos and videos wait for home Wi-Fi) / failed / off, `q` records waiting, `last` unix time of the last good sync, `via`, `err` | on change |
 | `wx` | `c`, `rh` %, `hpa`, `txt`, `hi`, `lo` | every few minutes |
 | `pwr` | `v`, `soc` % of the Pi's own battery, `src` the live source: `truck`, `overland` (the overland solar battery) or `reserve` | every minute |
 | `gps` | `lat`, `lon`, `kph`, `hdg` | every 5 s while moving |

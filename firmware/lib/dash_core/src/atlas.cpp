@@ -319,6 +319,7 @@ const char* syncWords(const char* st) {
   if (!strcmp(st, "waiting")) return "Waiting to sync";
   if (!strcmp(st, "syncing")) return "Syncing";
   if (!strcmp(st, "synced")) return "Synced";
+  if (!strcmp(st, "partial")) return "Light sync done; photos wait for home";
   if (!strcmp(st, "failed")) return "Sync didn't work";
   if (!strcmp(st, "off")) return "Sync off";
   return "Sync not known";

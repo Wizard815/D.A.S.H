@@ -580,6 +580,7 @@ void test_atlas_power_source() {
   TEST_ASSERT_EQUAL_STRING("overland", st.pwr.src);
   TEST_ASSERT_EQUAL_STRING("on the overland battery", atlasPowerSource(st.pwr.src));
   TEST_ASSERT_EQUAL_STRING("", atlasPowerSource(""));
+  TEST_ASSERT_EQUAL_STRING("Light sync done; photos wait for home", syncWords("partial"));
   const char* k = "{\"m\":\"atlas\",\"t\":\"pwr\",\"s\":2,\"v\":12.4}";
   st.apply(k, strlen(k), 2000);
   TEST_ASSERT_EQUAL_STRING("", st.pwr.src);
