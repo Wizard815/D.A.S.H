@@ -9,6 +9,7 @@
 #include "atlas.h"
 #include "share.h"
 #include "titan.h"
+#include "ha.h"
 #include "fob.h"
 #include "mod.h"
 #include <math.h>
@@ -677,6 +678,160 @@ void test_mjpeg_frames() {
   const uint8_t junk[] = {1, 2, 3};
   TEST_ASSERT_FALSE(mjpegFrame(junk, sizeof junk, &a, &b));
 }
+// ---------- Home Assistant ----------
+void test_ha_configure() {
+  HaBoard b;
+  // Spaces trimmed, a duplicate shown once (and marked as an alert), bad ids skipped.
+  TEST_ASSERT_EQUAL(4, haConfigure(b, " sensor.living_temp, light.kitchen,,Bad.Id,nodot",
+                                   "binary_sensor.front_door,light.kitchen , lock.back_door"));
+  char id[40];
+  haEntityId(b.e[0], id, sizeof id);
+  TEST_ASSERT_EQUAL_STRING("sensor.living_temp", id);
+  TEST_ASSERT_FALSE(b.e[0].alertable);
+  TEST_ASSERT_TRUE(b.e[1].alertable);  // light.kitchen is in both lists
+  haEntityId(b.e[2], id, sizeof id);
+  TEST_ASSERT_EQUAL_STRING("binary_sensor.front_door", id);
+  haDomain(b.e[3], id, sizeof id);
+  TEST_ASSERT_EQUAL_STRING("lock", id);
+  // Never more than kMax.
+  TEST_ASSERT_EQUAL(HaBoard::kMax, haConfigure(b, "a.a1,a.a2,a.a3,a.a4,a.a5,a.a6,a.a7,a.a8,a.a9", "b.b1"));
+  TEST_ASSERT_EQUAL(0, haConfigure(b, "", ""));
+}
+
+void test_ha_parse_state() {
+  const char* j = "{\"entity_id\":\"sensor.living_temp\",\"state\":\"21.5\",\"attributes\":{"
+                  "\"unit_of_measurement\":\"\xC2\xB0" "C\",\"device_class\":\"temperature\","
+                  "\"friendly_name\":\"Living room \xE2\x80\x93 temp\",\"forecast\":[1,2,3]},"
+                  "\"last_changed\":\"2026-11-28T10:15:03.123456+00:00\","
+                  "\"last_updated\":\"2026-11-28T10:15:03.123456+00:00\",\"context\":{\"id\":\"x\"}}";
+  HaReading r;
+  TEST_ASSERT_TRUE(parseHaState(j, strlen(j), r));
+  TEST_ASSERT_EQUAL(HaStatus::Ok, r.status);
+  TEST_ASSERT_EQUAL_STRING("21.5", r.state);
+  TEST_ASSERT_EQUAL_STRING("C", r.unit);
+  TEST_ASSERT_EQUAL_STRING("Living room - temp", r.name);
+  TEST_ASSERT_EQUAL_STRING("temperature", r.dc);
+  TEST_ASSERT_EQUAL_UINT32(1795860903u, r.changed);
+  // A long state is cut, not overflowed.
+  const char* lng = "{\"state\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"attributes\":{}}";
+  TEST_ASSERT_TRUE(parseHaState(lng, strlen(lng), r));
+  TEST_ASSERT_EQUAL(sizeof r.state - 1, strlen(r.state));
+  const char* un = "{\"state\":\"unavailable\",\"attributes\":{\"friendly_name\":\"Garage\"}}";
+  TEST_ASSERT_TRUE(parseHaState(un, strlen(un), r));
+  TEST_ASSERT_EQUAL(HaStatus::Unavailable, r.status);
+  // Not a state reply: left as it was.
+  TEST_ASSERT_FALSE(parseHaState("{\"message\":\"Entity not found.\"}", 31, r));
+  TEST_ASSERT_EQUAL_STRING("Garage", r.name);
+  TEST_ASSERT_FALSE(parseHaState("nope", 4, r));
+}
+
+void test_ha_parse_time() {
+  TEST_ASSERT_EQUAL_UINT32(0, haParseTime("1970-01-01T00:00:00+00:00"));  // 0 is "unknown" anyway
+  TEST_ASSERT_EQUAL_UINT32(86400, haParseTime("1970-01-02T00:00:00Z"));
+  TEST_ASSERT_EQUAL_UINT32(1795860903u, haParseTime("2026-11-28T10:15:03+00:00"));
+  TEST_ASSERT_EQUAL_UINT32(1795860903u, haParseTime("2026-11-28T12:15:03.5+02:00"));
+  TEST_ASSERT_EQUAL_UINT32(1795860903u, haParseTime("2026-11-28T05:15:03-05:00"));
+  TEST_ASSERT_EQUAL_UINT32(1709208000u, haParseTime("2024-02-29T12:00:00"));
+  TEST_ASSERT_EQUAL_UINT32(0, haParseTime("yesterday"));
+  TEST_ASSERT_EQUAL_UINT32(0, haParseTime("2026-13-01T00:00:00"));
+  TEST_ASSERT_EQUAL_UINT32(0, haParseTime(""));
+}
+
+static void haSet(HaEntity& e, const char* state, const char* dc = "", const char* name = "") {
+  e.r = HaReading();
+  e.r.status = HaStatus::Ok;
+  snprintf(e.r.state, sizeof e.r.state, "%s", state);
+  snprintf(e.r.dc, sizeof e.r.dc, "%s", dc);
+  snprintf(e.r.name, sizeof e.r.name, "%s", name);
+}
+
+void test_ha_words_and_summary() {
+  HaBoard b;
+  haConfigure(b, "sensor.living_temp,light.kitchen", "binary_sensor.front_door,lock.back_door,binary_sensor.leak");
+  char s[56];
+  haSummary(b, s, sizeof s);
+  TEST_ASSERT_EQUAL_STRING("Asking Home Assistant...", s);
+  TEST_ASSERT_EQUAL_STRING("...", haStateWords(b.e[0]));
+  haSet(b.e[0], "21.5", "temperature", "Living room");
+  snprintf(b.e[0].r.unit, sizeof b.e[0].r.unit, "C");
+  haSet(b.e[1], "on", "", "Kitchen");
+  haSet(b.e[2], "off", "door", "Front door");
+  haSet(b.e[3], "locked", "", "Back door");
+  haSet(b.e[4], "off", "moisture", "");
+  haValueText(b.e[0], s, sizeof s);
+  TEST_ASSERT_EQUAL_STRING("21.5 C", s);
+  TEST_ASSERT_EQUAL_STRING("closed", haStateWords(b.e[2]));
+  TEST_ASSERT_EQUAL_STRING("dry", haStateWords(b.e[4]));
+  haName(b.e[4], s, sizeof s);
+  TEST_ASSERT_EQUAL_STRING("leak", s);  // no friendly_name: the id after the dot
+  TEST_ASSERT_FALSE(haAlerting(b.e[1]));  // on, but not an alert entity
+  haSummary(b, s, sizeof s);
+  TEST_ASSERT_EQUAL_STRING("All quiet", s);
+  haSet(b.e[2], "on", "door", "Front door");
+  TEST_ASSERT_TRUE(haAlerting(b.e[2]));
+  haSummary(b, s, sizeof s);
+  TEST_ASSERT_EQUAL_STRING("Front door open", s);
+  haSet(b.e[3], "unlocked", "", "Back door");
+  haSummary(b, s, sizeof s);
+  TEST_ASSERT_EQUAL_STRING("2 alerts: Front door, Back door", s);
+  uint8_t order[HaBoard::kMax];
+  TEST_ASSERT_EQUAL(5, haOrder(b, order));
+  TEST_ASSERT_EQUAL(2, order[0]);
+  TEST_ASSERT_EQUAL(3, order[1]);
+  TEST_ASSERT_EQUAL(0, order[2]);
+  haSet(b.e[2], "off", "door", "Front door");
+  haSet(b.e[3], "locked", "", "Back door");
+  b.e[4].r.status = HaStatus::Unavailable;
+  b.e[1].r.status = HaStatus::Missing;
+  TEST_ASSERT_EQUAL_STRING("not found", haStateWords(b.e[1]));
+  haSummary(b, s, sizeof s);
+  TEST_ASSERT_EQUAL_STRING("All quiet, 2 unavailable", s);
+  HaBoard none;
+  haSummary(none, s, sizeof s);
+  TEST_ASSERT_EQUAL_STRING("No entities set", s);
+}
+
+void test_ha_alert_seen() {
+  HaBoard b;
+  haConfigure(b, "", "binary_sensor.front_door,lock.back_door");
+  haSet(b.e[0], "off", "door");
+  haSet(b.e[1], "locked");
+  TEST_ASSERT_EQUAL(HaAlertChange::None, haCheckAlerts(b));
+  haSet(b.e[0], "on", "door");
+  TEST_ASSERT_EQUAL(HaAlertChange::Start, haCheckAlerts(b));
+  TEST_ASSERT_EQUAL(HaAlertChange::None, haCheckAlerts(b));  // still open: no second buzz
+  TEST_ASSERT_TRUE(haMarkSeen(b));
+  TEST_ASSERT_FALSE(haMarkSeen(b));
+  haSet(b.e[1], "unlocked");
+  TEST_ASSERT_EQUAL(HaAlertChange::Start, haCheckAlerts(b));  // a second one does buzz
+  haSet(b.e[0], "off", "door");
+  haSet(b.e[1], "locked");
+  TEST_ASSERT_EQUAL(HaAlertChange::Stop, haCheckAlerts(b));  // cleared before anyone looked
+  TEST_ASSERT_EQUAL(HaAlertChange::None, haCheckAlerts(b));
+  // Unavailable isn't an alert.
+  b.e[0].r.status = HaStatus::Unavailable;
+  snprintf(b.e[0].r.state, sizeof b.e[0].r.state, "on");
+  TEST_ASSERT_EQUAL(HaAlertChange::None, haCheckAlerts(b));
+}
+
+void test_ha_toggle() {
+  HaBoard b;
+  haConfigure(b, "light.kitchen,switch.fan,sensor.temp,lock.back_door,light.porch", "");
+  haSet(b.e[0], "on");
+  haSet(b.e[1], "off");
+  haSet(b.e[2], "on");
+  haSet(b.e[3], "locked");
+  b.e[4].r.status = HaStatus::Unavailable;
+  TEST_ASSERT_TRUE(haCanToggle(b.e[0]));
+  TEST_ASSERT_TRUE(haCanToggle(b.e[1]));
+  TEST_ASSERT_FALSE(haCanToggle(b.e[2]));  // a sensor
+  TEST_ASSERT_FALSE(haCanToggle(b.e[3]));  // never a lock
+  TEST_ASSERT_FALSE(haCanToggle(b.e[4]));
+  char body[64];
+  haToggleBody(b.e[0], body, sizeof body);
+  TEST_ASSERT_EQUAL_STRING("{\"entity_id\":\"light.kitchen\"}", body);
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_battery_ends);
@@ -726,5 +881,11 @@ int main() {
   RUN_TEST(test_atlas_power_source);
   RUN_TEST(test_fob_status);
   RUN_TEST(test_atlas_alerts);
+  RUN_TEST(test_ha_configure);
+  RUN_TEST(test_ha_parse_state);
+  RUN_TEST(test_ha_parse_time);
+  RUN_TEST(test_ha_words_and_summary);
+  RUN_TEST(test_ha_alert_seen);
+  RUN_TEST(test_ha_toggle);
   return UNITY_END();
 }
